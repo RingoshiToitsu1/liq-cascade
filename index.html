@@ -469,7 +469,7 @@ input:focus,button:focus,.tier-chip:focus,.side-btn:focus,.ex-btn:focus,.iv-btn:
   </div>
   <div class="liq-feed">
     <div class="feed-hdr">
-      <span>LIVE LIQUIDATIONS · BYBIT</span>
+      <span>LIVE LIQUIDATIONS · OKX</span>
       <span class="feed-dot" id="feedDot"></span>
     </div>
     <div class="feed-stats">
@@ -487,7 +487,7 @@ input:focus,button:focus,.tier-chip:focus,.side-btn:focus,.ex-btn:focus,.iv-btn:
       </div>
     </div>
     <div class="feed-list" id="feedList">
-      <div class="feed-empty">Connecting to Bybit…</div>
+      <div class="feed-empty">Connecting to OKX…</div>
     </div>
   </div>
 </div>
@@ -1591,111 +1591,125 @@ function updateFeedStats() {
 }
 setInterval(updateFeedStats, 5000);
 
-// ── Liquidation WebSocket — Bybit → OKX fallback ─────────────────────────
-var liqWs      = null;
-var liqWsIdx   = 0;
-var liqPingId  = null;
+// ── OKX Liquidation Feed — WS with REST polling fallback ─────────────────
+var liqWs     = null;
+var liqPingId = null;
+var seenLiqTs = new Set(); // dedup REST-polled events
 
-var LIQ_SOURCES = [
-  {
-    name: 'Bybit',
-    url:  'wss://stream.bybit.com/v5/public/linear',
-    onopen: function(ws) {
-      ws.send(JSON.stringify({ op:'subscribe', args:['liquidation.BTCUSDT'] }));
-      // Bybit requires a ping every 20 s or it drops the connection
-      clearInterval(liqPingId);
-      liqPingId = setInterval(function() {
-        if (ws.readyState === 1) ws.send(JSON.stringify({ op:'ping' }));
-      }, 20000);
-    },
-    onmessage: function(d) {
-      if (d.topic === 'liquidation.BTCUSDT' && d.data) {
-        var ev = d.data;
-        var price = parseFloat(ev.price), size = parseFloat(ev.size);
-        return { time: d.ts || Date.now(), price: price, size: size,
-                 usdValue: price * size, isLong: ev.side === 'Sell' };
-      }
-      return null;
-    },
-  },
-  {
-    name: 'OKX',
-    url:  'wss://ws.okx.com:8443/ws/v5/public',
-    onopen: function(ws) {
-      ws.send(JSON.stringify({ op:'subscribe', args:[{ channel:'liquidation-orders', instType:'SWAP' }] }));
-      // OKX ping
-      clearInterval(liqPingId);
-      liqPingId = setInterval(function() {
-        if (ws.readyState === 1) ws.send('ping');
-      }, 25000);
-    },
-    onmessage: function(d) {
-      if (!d.data || !Array.isArray(d.data)) return null;
-      var events = [];
-      d.data.forEach(function(item) {
-        if (!item.instId || item.instId.indexOf('BTC') < 0) return;
-        if (!Array.isArray(item.details)) return;
-        item.details.forEach(function(det) {
-          var price = parseFloat(det.bkPx), size = parseFloat(det.sz);
-          if (!price || !size) return;
-          events.push({ time: parseInt(item.ts) || Date.now(), price: price, size: size,
-                        usdValue: price * size, isLong: det.posSide === 'long' });
-        });
-      });
-      return events.length ? events : null;
-    },
-  },
-];
+function setFeedStatus(msg) {
+  var list = document.getElementById('feedList');
+  if (list && !liqEvents.length) list.innerHTML = '<div class="feed-empty">' + msg + '</div>';
+}
 
 function connectLiqWS() {
   clearInterval(liqPingId);
   try { if (liqWs) liqWs.close(); } catch(_) {}
 
-  var src     = LIQ_SOURCES[liqWsIdx % LIQ_SOURCES.length];
   var feedDot = document.getElementById('feedDot');
   var feedHdr = document.querySelector('.feed-hdr span:first-child');
-  if (feedHdr) feedHdr.textContent = 'LIVE LIQUIDATIONS · ' + src.name.toUpperCase();
+  if (feedHdr) feedHdr.textContent = 'LIVE LIQUIDATIONS · OKX';
+  setFeedStatus('Connecting to OKX…');
 
-  liqWs = new WebSocket(src.url);
+  // Try both OKX endpoints (8443 and AWS)
+  var urls = ['wss://ws.okx.com:8443/ws/v5/public', 'wss://wsaws.okx.com:8443/ws/v5/public'];
+  var urlIdx = 0;
 
-  // Timeout: if no open in 8 s try next source
-  var timeout = setTimeout(function() {
-    if (liqWs.readyState !== 1) { liqWsIdx++; try { liqWs.close(); } catch(_) {} }
-  }, 8000);
+  function tryNext() {
+    if (urlIdx >= urls.length) {
+      feedDot.className = 'feed-dot err';
+      setFeedStatus('WS unavailable — using REST polling');
+      return;
+    }
+    try { if (liqWs) liqWs.close(); } catch(_) {}
+    liqWs = new WebSocket(urls[urlIdx++]);
 
-  liqWs.onopen = function() {
-    clearTimeout(timeout);
-    feedDot.className = 'feed-dot live';
-    src.onopen(liqWs);
-  };
+    var timeout = setTimeout(function() {
+      if (liqWs.readyState !== 1) { try { liqWs.close(); } catch(_) {} tryNext(); }
+    }, 7000);
 
-  liqWs.onmessage = function(e) {
-    if (e.data === 'pong' || e.data === '{"op":"pong"}') return;
-    try {
-      var d = JSON.parse(e.data);
-      var result = src.onmessage(d);
-      if (!result) return;
-      var evts = Array.isArray(result) ? result : [result];
-      evts.forEach(function(ev) { addLiqEvent(ev); });
-    } catch(_) {}
-  };
+    liqWs.onopen = function() {
+      clearTimeout(timeout);
+      feedDot.className = 'feed-dot live';
+      setFeedStatus('Connected · waiting for liq events…');
+      liqWs.send(JSON.stringify({ op:'subscribe', args:[{ channel:'liquidation-orders', instType:'SWAP', instId:'BTC-USDT-SWAP' }] }));
+      clearInterval(liqPingId);
+      liqPingId = setInterval(function() {
+        if (liqWs && liqWs.readyState === 1) liqWs.send('ping');
+      }, 25000);
+    };
 
-  liqWs.onclose = function() {
-    clearTimeout(timeout);
-    clearInterval(liqPingId);
-    feedDot.className = 'feed-dot';
-    liqWsIdx++;
-    setTimeout(connectLiqWS, 3000);
-  };
+    liqWs.onmessage = function(e) {
+      if (e.data === 'pong') return;
+      try {
+        var d = JSON.parse(e.data);
+        if (!d.data || !Array.isArray(d.data)) return;
+        d.data.forEach(function(item) {
+          if (!Array.isArray(item.details)) return;
+          item.details.forEach(function(det) {
+            var price = parseFloat(det.bkPx);
+            var sz    = parseFloat(det.sz);       // lots
+            var usd   = price * sz * 0.01;        // 1 lot = 0.01 BTC on OKX BTC-USDT-SWAP
+            if (!price || !sz) return;
+            var ts = parseInt(det.ts || item.ts) || Date.now();
+            seenLiqTs.add(ts);
+            addLiqEvent({ time: ts, price: price, size: sz, usdValue: usd, isLong: det.posSide === 'long' });
+          });
+        });
+      } catch(_) {}
+    };
 
-  liqWs.onerror = function() { try { liqWs.close(); } catch(_) {} };
+    liqWs.onclose = function() {
+      clearTimeout(timeout);
+      clearInterval(liqPingId);
+      feedDot.className = 'feed-dot err';
+      // Reconnect after 5 s (restart from first URL)
+      setTimeout(function() { urlIdx = 0; connectLiqWS(); }, 5000);
+    };
+
+    liqWs.onerror = function() { try { liqWs.close(); } catch(_) {} };
+  }
+
+  tryNext();
 }
+
+// REST fallback — polls OKX every 15 s; works even when WS port is blocked
+async function pollLiqREST() {
+  try {
+    var ctrl = new AbortController();
+    var tid  = setTimeout(function(){ ctrl.abort(); }, 6000);
+    var res  = await fetch('https://www.okx.com/api/v5/public/liquidation-orders?instType=SWAP&instId=BTC-USDT-SWAP&state=filled&limit=50', { signal: ctrl.signal });
+    clearTimeout(tid);
+    var d = await res.json();
+    if (d.code !== '0' || !Array.isArray(d.data)) return;
+    var added = 0;
+    d.data.forEach(function(item) {
+      if (!Array.isArray(item.details)) return;
+      item.details.forEach(function(det) {
+        var ts    = parseInt(det.ts || item.ts);
+        if (!ts || seenLiqTs.has(ts)) return;  // skip already-seen events
+        seenLiqTs.add(ts);
+        var price = parseFloat(det.bkPx);
+        var sz    = parseFloat(det.sz);
+        var usd   = price * sz * 0.01;
+        if (!price || !sz) return;
+        addLiqEvent({ time: ts, price: price, size: sz, usdValue: usd, isLong: det.posSide === 'long' });
+        added++;
+      });
+    });
+    if (added > 0) {
+      var feedHdr = document.querySelector('.feed-hdr span:first-child');
+      if (feedHdr && !feedHdr.textContent.includes('REST')) feedHdr.textContent = 'LIVE LIQUIDATIONS · OKX REST';
+    }
+  } catch(_) {}
+}
+setInterval(pollLiqREST, 15000);
 
 // ── Boot ──────────────────────────────────────────────────────────────────
 connectWS();
 fetchREST();
 setInterval(fetchREST, 10000);
 connectLiqWS();
+pollLiqREST();   // immediate first poll so feed isn't empty on load
 initChart();
 render();
 
