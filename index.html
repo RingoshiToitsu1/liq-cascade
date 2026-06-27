@@ -6,1064 +6,1235 @@
 <title>Cascade — Liquidation Zone Calculator</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <style>
-  :root {
-    --bg: #0A0B0D;
-    --panel: #13151A;
-    --panel-raised: #181B21;
-    --hairline: #23262E;
-    --hairline-soft: #1B1E24;
-    --text: #E8E9EB;
-    --text-dim: #8B8F98;
-    --text-faint: #555A64;
-    --bull: #3DDC84;
-    --bear: #FF5C5C;
-    --amber: #F0A830;
-    --amber-dim: #4A3A1A;
-    --danger: #FF3B3B;
-    --warn: #FFB020;
-    --watch: #60B4FF;
-    --done: #3A3D46;
-  }
+:root {
+  --bg:            #0A0B0D;
+  --panel:         #13151A;
+  --panel-raised:  #181B21;
+  --hairline:      #23262E;
+  --hairline-soft: #1B1E24;
+  --text:          #E8E9EB;
+  --text-dim:      #8B8F98;
+  --text-faint:    #555A64;
+  --bull:   #3DDC84;
+  --bear:   #FF5C5C;
+  --amber:  #F0A830;
+  --amber-dim: #3A2E12;
+  --danger: #FF3B3B;
+  --warn:   #FFB020;
+  --watch:  #60B4FF;
+  --done:   #2E3039;
+}
+*,*::before,*::after { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'IBM Plex Mono', monospace;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+.display { font-family: 'Archivo', sans-serif; }
+body::before {
+  content:'';
+  position:fixed; inset:0;
+  background-image:
+    radial-gradient(circle at 15% 0%,  rgba(61,220,132,0.04), transparent 40%),
+    radial-gradient(circle at 85% 100%, rgba(255,92,92,0.04),  transparent 40%);
+  pointer-events:none; z-index:0;
+}
+.wrap { position:relative; z-index:1; max-width:1260px; margin:0 auto; padding:24px 18px 80px; }
 
-  * { margin: 0; padding: 0; box-sizing: border-box; }
+/* ── HEADER ── */
+header {
+  display:flex; justify-content:space-between; align-items:flex-start;
+  flex-wrap:wrap; gap:14px; margin-bottom:22px;
+  padding-bottom:18px; border-bottom:1px solid var(--hairline);
+}
+.brand { display:flex; align-items:baseline; gap:10px; }
+.brand .mark {
+  width:9px; height:9px; background:var(--bull); border-radius:1px;
+  display:inline-block; box-shadow:0 0 10px rgba(61,220,132,.6);
+  transform:translateY(-1px);
+}
+h1.display { font-size:21px; font-weight:800; letter-spacing:-.02em; }
+.tagline { color:var(--text-dim); font-size:11.5px; margin-top:3px; }
 
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'IBM Plex Mono', monospace;
-    min-height: 100vh;
-    -webkit-font-smoothing: antialiased;
-  }
+.price-widget { text-align:right; }
+.pw-label {
+  font-size:10px; color:var(--text-faint); text-transform:uppercase;
+  letter-spacing:.12em; display:flex; align-items:center;
+  justify-content:flex-end; gap:6px;
+}
+.ws-dot {
+  width:6px; height:6px; border-radius:50%;
+  background:var(--text-faint); display:inline-block; flex-shrink:0;
+}
+.ws-dot.live { background:var(--bull); box-shadow:0 0 6px rgba(61,220,132,.8); animation:blink 2s ease-in-out infinite; }
+.ws-dot.err  { background:var(--bear); }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
 
-  .display { font-family: 'Archivo', sans-serif; }
+.price-row { display:flex; align-items:baseline; gap:9px; justify-content:flex-end; margin-top:3px; }
+#livePrice { font-size:27px; font-weight:600; transition:color .25s; line-height:1; }
+#livePrice.loading { color:var(--text-faint); font-size:13px; }
+#livePrice.flash-up { color:var(--bull); }
+#livePrice.flash-dn { color:var(--bear); }
+.price-change { font-size:11.5px; padding:2px 6px; border-radius:4px; display:none; }
+.price-change.up { background:rgba(61,220,132,.12); color:var(--bull); display:block; }
+.price-change.dn { background:rgba(255,92,92,.12);  color:var(--bear); display:block; }
+#priceSource { font-size:10px; color:var(--text-faint); margin-top:3px; text-align:right; }
 
-  body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background-image:
-      radial-gradient(circle at 15% 0%, rgba(61,220,132,0.04), transparent 40%),
-      radial-gradient(circle at 85% 100%, rgba(255,92,92,0.04), transparent 40%);
-    pointer-events: none;
-    z-index: 0;
-  }
+/* ── HONESTY ── */
+.honesty {
+  display:flex; gap:10px; align-items:flex-start;
+  background:linear-gradient(180deg,rgba(240,168,48,.06),rgba(240,168,48,.02));
+  border:1px solid var(--amber-dim); border-radius:6px;
+  padding:10px 14px; margin-bottom:20px;
+  font-size:11.5px; color:#C9A86A; line-height:1.55;
+}
+.honesty .dot { color:var(--amber); flex-shrink:0; font-size:14px; line-height:1.3; }
+.honesty b { color:var(--amber); font-weight:600; }
 
-  .wrap {
-    position: relative;
-    z-index: 1;
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 28px 20px 80px;
-  }
+/* ── CHART SECTION ── */
+.chart-section {
+  display:grid;
+  grid-template-columns: 1fr 300px;
+  gap:1px;
+  background:var(--hairline);
+  border:1px solid var(--hairline);
+  border-radius:8px;
+  overflow:hidden;
+  margin-bottom:20px;
+}
+.chart-wrap { background:var(--panel); display:flex; flex-direction:column; min-height:400px; }
+.chart-toolbar {
+  display:flex; justify-content:space-between; align-items:center;
+  padding:10px 14px; border-bottom:1px solid var(--hairline-soft);
+  flex-shrink:0;
+}
+.ct-label { font-size:11px; color:var(--text-dim); letter-spacing:.04em; }
+.iv-btns { display:flex; gap:4px; }
+.iv-btn {
+  background:var(--panel-raised); border:1px solid var(--hairline);
+  color:var(--text-faint); font-family:'IBM Plex Mono',monospace;
+  font-size:10px; font-weight:600; padding:4px 9px; border-radius:4px;
+  cursor:pointer; transition:all .12s;
+}
+.iv-btn.active { background:rgba(96,180,255,.1); border-color:var(--watch); color:var(--watch); }
+#chartDiv { flex:1; min-height:360px; }
 
-  /* ── HEADER ── */
-  header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    flex-wrap: wrap;
-    gap: 16px;
-    margin-bottom: 26px;
-    padding-bottom: 20px;
-    border-bottom: 1px solid var(--hairline);
-  }
+/* ── LIQ FEED ── */
+.liq-feed { background:var(--panel); display:flex; flex-direction:column; overflow:hidden; }
+.feed-hdr {
+  display:flex; justify-content:space-between; align-items:center;
+  padding:10px 14px; border-bottom:1px solid var(--hairline-soft); flex-shrink:0;
+}
+.feed-hdr span:first-child { font-size:10px; color:var(--text-dim); text-transform:uppercase; letter-spacing:.1em; font-weight:600; }
+.feed-dot { width:6px; height:6px; border-radius:50%; background:var(--text-faint); }
+.feed-dot.live { background:var(--bear); animation:blink 1.5s ease-in-out infinite; }
 
-  .brand { display: flex; align-items: baseline; gap: 10px; }
-  .brand .mark {
-    width: 9px; height: 9px;
-    background: var(--bull);
-    border-radius: 1px;
-    display: inline-block;
-    box-shadow: 0 0 10px rgba(61,220,132,0.6);
-    transform: translateY(-1px);
-  }
-  h1.display { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; }
-  .tagline { color: var(--text-dim); font-size: 12px; margin-top: 4px; }
+.feed-stats {
+  display:grid; grid-template-columns:repeat(3,1fr);
+  border-bottom:1px solid var(--hairline-soft); flex-shrink:0;
+}
+.feed-stat { padding:8px 10px; border-right:1px solid var(--hairline-soft); }
+.feed-stat:last-child { border-right:none; }
+.feed-stat .sv { font-size:13px; font-weight:600; color:var(--text); }
+.feed-stat .sl { font-size:9px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.06em; margin-top:2px; }
+#statLongVol  .sv { color:var(--bear); }
+#statShortVol .sv { color:var(--bull); }
 
-  /* ── LIVE PRICE ── */
-  .price-widget { text-align: right; }
-  .price-widget .pw-label {
-    font-size: 10px;
-    color: var(--text-faint);
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 7px;
-  }
-  .ws-dot {
-    width: 6px; height: 6px;
-    border-radius: 50%;
-    background: var(--text-faint);
-    display: inline-block;
-    flex-shrink: 0;
-  }
-  .ws-dot.live {
-    background: var(--bull);
-    box-shadow: 0 0 6px rgba(61,220,132,0.8);
-    animation: blink 2s ease-in-out infinite;
-  }
-  .ws-dot.err { background: var(--bear); }
-  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.35} }
+.feed-list { flex:1; overflow-y:auto; }
+.feed-list::-webkit-scrollbar { width:3px; }
+.feed-list::-webkit-scrollbar-track { background:transparent; }
+.feed-list::-webkit-scrollbar-thumb { background:var(--hairline); border-radius:2px; }
+.feed-empty { padding:18px 14px; font-size:11px; color:var(--text-faint); }
 
-  .price-row { display: flex; align-items: baseline; gap: 10px; justify-content: flex-end; margin-top: 3px; }
-  #livePrice {
-    font-size: 28px;
-    font-weight: 600;
-    transition: color 0.25s ease;
-    line-height: 1;
-  }
-  #livePrice.loading { color: var(--text-faint); font-size: 14px; }
-  #livePrice.flash-up { color: var(--bull); }
-  #livePrice.flash-dn { color: var(--bear); }
+.feed-item {
+  display:grid; grid-template-columns:42px 1fr 1fr;
+  gap:4px; align-items:center;
+  padding:6px 12px; border-bottom:1px solid var(--hairline-soft);
+  font-size:10.5px;
+}
+.feed-item:last-child { border-bottom:none; }
+.fi-time { color:var(--text-faint); font-size:9.5px; }
+.fi-type { font-size:9px; font-weight:700; letter-spacing:.06em; padding:2px 5px; border-radius:3px; text-align:center; }
+.fi-long  .fi-type { background:rgba(255,92,92,.12);  color:var(--bear); }
+.fi-short .fi-type { background:rgba(61,220,132,.12); color:var(--bull); }
+.fi-usd { font-weight:600; text-align:right; }
+.fi-long  .fi-usd { color:var(--bear); }
+.fi-short .fi-usd { color:var(--bull); }
+.fi-price { color:var(--text-dim); text-align:right; font-size:10px; }
 
-  .price-change {
-    font-size: 12px;
-    padding: 3px 7px;
-    border-radius: 4px;
-    display: none;
-  }
-  .price-change.up { background: rgba(61,220,132,0.12); color: var(--bull); display: block; }
-  .price-change.dn { background: rgba(255,92,92,0.12); color: var(--bear); display: block; }
+/* ── CONTROLS ── */
+.controls {
+  display:grid; grid-template-columns:repeat(4,1fr);
+  gap:1px; background:var(--hairline);
+  border:1px solid var(--hairline); border-radius:8px;
+  overflow:hidden; margin-bottom:20px;
+}
+.field { background:var(--panel); padding:14px 16px; }
+.field > label {
+  display:block; font-size:9.5px; text-transform:uppercase;
+  letter-spacing:.1em; color:var(--text-faint); margin-bottom:7px;
+}
+.field .input-row { display:flex; align-items:baseline; gap:6px; }
+.field input[type="number"] {
+  background:transparent; border:none;
+  color:var(--text); font-family:'IBM Plex Mono',monospace;
+  font-size:18px; font-weight:600; width:100%; outline:none;
+}
+.field input[type="number"]::-webkit-outer-spin-button,
+.field input[type="number"]::-webkit-inner-spin-button { -webkit-appearance:none; }
+.field .suffix { color:var(--text-faint); font-size:13px; flex-shrink:0; }
 
-  #priceSource { font-size: 10.5px; color: var(--text-faint); margin-top: 4px; text-align: right; }
+.side-toggle { display:flex; gap:5px; margin-top:9px; }
+.side-btn {
+  flex:1; background:var(--panel-raised); border:1px solid var(--hairline);
+  color:var(--text-dim); font-family:'IBM Plex Mono',monospace;
+  font-size:10px; font-weight:600; letter-spacing:.04em;
+  padding:6px 0; border-radius:5px; cursor:pointer; transition:all .12s;
+}
+.side-btn.active.long  { background:rgba(61,220,132,.1); border-color:var(--bull); color:var(--bull); }
+.side-btn.active.short { background:rgba(255,92,92,.1);  border-color:var(--bear); color:var(--bear); }
 
-  /* ── HONESTY STRIP ── */
-  .honesty {
-    display: flex;
-    gap: 10px;
-    align-items: flex-start;
-    background: linear-gradient(180deg, rgba(240,168,48,0.06), rgba(240,168,48,0.02));
-    border: 1px solid var(--amber-dim);
-    border-radius: 6px;
-    padding: 11px 14px;
-    margin-bottom: 22px;
-    font-size: 11.5px;
-    color: #C9A86A;
-    line-height: 1.55;
-  }
-  .honesty .dot { color: var(--amber); flex-shrink: 0; font-size: 14px; line-height: 1.3; }
-  .honesty b { color: var(--amber); font-weight: 600; }
+.ex-row { display:flex; gap:4px; flex-wrap:wrap; margin-top:7px; }
+.ex-btn {
+  background:var(--panel-raised); border:1px solid var(--hairline);
+  color:var(--text-dim); font-family:'IBM Plex Mono',monospace;
+  font-size:9px; font-weight:700; letter-spacing:.04em;
+  padding:3px 7px; border-radius:3px; cursor:pointer; transition:all .12s;
+}
+.ex-btn.active { background:rgba(96,180,255,.1); border-color:var(--watch); color:var(--watch); }
+.margin-row { display:flex; gap:9px; align-items:center; margin-top:8px; flex-wrap:wrap; }
+.margin-row label { font-size:9px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.08em; }
+.margin-row input[type="number"] { font-size:13px !important; width:48px !important; font-weight:600; }
 
-  /* ── CONTROLS ── */
-  .controls {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr 1fr;
-    gap: 1px;
-    background: var(--hairline);
-    border: 1px solid var(--hairline);
-    border-radius: 8px;
-    overflow: hidden;
-    margin-bottom: 22px;
-  }
+.tier-list { display:flex; flex-wrap:wrap; gap:5px; margin-top:4px; }
+.tier-chip {
+  background:var(--panel-raised); border:1px solid var(--hairline);
+  color:var(--text-dim); font-size:10.5px; font-weight:600;
+  padding:4px 8px; border-radius:20px; cursor:pointer;
+  transition:all .12s; user-select:none;
+}
+.tier-chip.active { background:rgba(240,168,48,.1); border-color:var(--amber); color:var(--amber); }
 
-  .field { background: var(--panel); padding: 15px 17px; }
-  .field > label {
-    display: block;
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: var(--text-faint);
-    margin-bottom: 8px;
-  }
-  .field .input-row { display: flex; align-items: baseline; gap: 7px; }
-  .field input[type="number"] {
-    background: transparent;
-    border: none;
-    color: var(--text);
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 19px;
-    font-weight: 600;
-    width: 100%;
-    outline: none;
-  }
-  .field input[type="number"]::-webkit-outer-spin-button,
-  .field input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-  .field .suffix { color: var(--text-faint); font-size: 13px; flex-shrink: 0; }
-  .field .sub-input { font-size: 14px !important; }
+/* ── DECISION TRAY ── */
+.tray {
+  display:grid; grid-template-columns:repeat(3,1fr);
+  gap:1px; background:var(--hairline);
+  border:1px solid var(--hairline); border-radius:8px;
+  overflow:hidden; margin-bottom:20px;
+}
+.tray-cell { background:var(--panel); padding:13px 16px; }
+.tray-cell .tc-label { font-size:9px; text-transform:uppercase; letter-spacing:.1em; color:var(--text-faint); margin-bottom:6px; }
+.tray-cell .tc-val { font-size:19px; font-weight:600; color:var(--text-dim); }
+.tray-cell .tc-meta { font-size:10.5px; color:var(--text-faint); margin-top:2px; }
+.tray-cell.t-danger .tc-val { color:var(--danger); }
+.tray-cell.t-warn   .tc-val { color:var(--warn); }
+.tray-cell.t-watch  .tc-val { color:var(--watch); }
+.tray-cell.t-safe   .tc-val { color:var(--bull); }
 
-  .side-toggle { display: flex; gap: 6px; margin-top: 10px; }
-  .side-btn {
-    flex: 1;
-    background: var(--panel-raised);
-    border: 1px solid var(--hairline);
-    color: var(--text-dim);
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 10.5px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    padding: 7px 0;
-    border-radius: 5px;
-    cursor: pointer;
-    transition: all 0.15s;
-  }
-  .side-btn.active.long  { background: rgba(61,220,132,0.1); border-color: var(--bull); color: var(--bull); }
-  .side-btn.active.short { background: rgba(255,92,92,0.1);  border-color: var(--bear); color: var(--bear); }
+/* ── CASCADE TABLE ── */
+.section-hdr { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:10px; }
+.section-hdr h2 { font-size:11px; text-transform:uppercase; letter-spacing:.1em; color:var(--text-dim); font-weight:600; }
+.section-hdr .meta { font-size:10.5px; color:var(--text-faint); }
 
-  .ex-row { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 8px; }
-  .ex-btn {
-    background: var(--panel-raised);
-    border: 1px solid var(--hairline);
-    color: var(--text-dim);
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 9.5px;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    padding: 4px 8px;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: all 0.12s;
-  }
-  .ex-btn.active { background: rgba(96,180,255,0.1); border-color: var(--watch); color: var(--watch); }
+.cascade { border:1px solid var(--hairline); border-radius:8px; background:var(--panel); overflow:hidden; }
+.cascade-row {
+  display:grid;
+  grid-template-columns: 50px 74px 1fr 144px 130px 88px;
+  align-items:center; border-bottom:1px solid var(--hairline-soft);
+  padding:0 14px; height:58px; transition:background .12s; gap:4px;
+}
+.cascade-row:last-child { border-bottom:none; }
+.cascade-row:hover { background:var(--panel-raised); }
+.cascade-row.done { opacity:.38; }
+.cascade-row.entry-row { height:38px; background:rgba(255,255,255,.018); }
+.entry-label { font-size:10.5px; color:var(--text-dim); letter-spacing:.04em; grid-column:3; }
+.cascade-row.cluster-start { border-top:1px solid rgba(240,168,48,.25); }
+.cascade-row.cluster-end   { border-bottom:1px solid rgba(240,168,48,.25) !important; }
 
-  .margin-row {
-    display: flex;
-    gap: 10px;
-    align-items: center;
-    margin-top: 9px;
-    flex-wrap: wrap;
-  }
-  .margin-row label { font-size: 9.5px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.08em; }
-  .margin-row input[type="number"] {
-    font-size: 13px !important;
-    width: 52px !important;
-    font-weight: 600;
-    background: transparent;
-    border: none;
-    color: var(--text);
-    font-family: 'IBM Plex Mono', monospace;
-    outline: none;
-  }
+.lev-badge {
+  font-size:12px; font-weight:700; color:var(--text);
+  background:var(--panel-raised); border:1px solid var(--hairline);
+  border-radius:5px; padding:3px 0; text-align:center; width:42px;
+}
+.done .lev-badge { color:var(--text-faint); }
 
-  .tier-list { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px; }
-  .tier-chip {
-    background: var(--panel-raised);
-    border: 1px solid var(--hairline);
-    color: var(--text-dim);
-    font-size: 11px;
-    font-weight: 600;
-    padding: 5px 9px;
-    border-radius: 20px;
-    cursor: pointer;
-    transition: all 0.12s;
-    user-select: none;
-  }
-  .tier-chip.active { background: rgba(240,168,48,0.1); border-color: var(--amber); color: var(--amber); }
+.status-badge {
+  font-size:8px; font-weight:700; letter-spacing:.08em;
+  padding:2px 5px; border-radius:3px; text-align:center;
+  white-space:nowrap; display:inline-block;
+}
+.badge-danger { background:rgba(255,59,59,.14);  color:var(--danger); border:1px solid rgba(255,59,59,.28); }
+.badge-warn   { background:rgba(255,176,32,.12); color:var(--warn);   border:1px solid rgba(255,176,32,.24); }
+.badge-watch  { background:rgba(96,180,255,.1);  color:var(--watch);  border:1px solid rgba(96,180,255,.22); }
+.badge-safe   { color:var(--text-faint); border:1px solid var(--hairline); }
+.badge-done   { color:var(--text-faint); border:1px solid var(--hairline-soft); }
 
-  /* ── DECISION TRAY ── */
-  .tray {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 1px;
-    background: var(--hairline);
-    border: 1px solid var(--hairline);
-    border-radius: 8px;
-    overflow: hidden;
-    margin-bottom: 22px;
-  }
+.depth-track {
+  position:relative; height:4px; border-radius:2px;
+  background:var(--hairline-soft); margin:0 8px; overflow:hidden;
+}
+.depth-fill { position:absolute; inset:0 auto 0 0; border-radius:2px; transition:width .4s cubic-bezier(.16,1,.3,1); }
 
-  .tray-cell { background: var(--panel); padding: 14px 17px; }
-  .tray-cell .tc-label {
-    font-size: 9.5px;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: var(--text-faint);
-    margin-bottom: 7px;
-  }
-  .tray-cell .tc-val { font-size: 20px; font-weight: 600; color: var(--text-dim); }
-  .tray-cell .tc-meta { font-size: 11px; color: var(--text-faint); margin-top: 3px; }
+.liq-price { font-size:15px; font-weight:600; }
+.liq-sub   { font-size:10.5px; color:var(--text-faint); margin-top:1px; }
+.cluster-pip {
+  display:inline-block; font-size:8px; font-weight:700;
+  padding:2px 5px; border-radius:10px;
+  background:rgba(240,168,48,.1); border:1px solid rgba(240,168,48,.28);
+  color:var(--amber); margin-left:5px; vertical-align:middle;
+}
 
-  .tray-cell.t-danger .tc-val { color: var(--danger); }
-  .tray-cell.t-warn   .tc-val { color: var(--warn); }
-  .tray-cell.t-watch  .tc-val { color: var(--watch); }
-  .tray-cell.t-safe   .tc-val { color: var(--bull); }
+.dist-col { text-align:right; }
+.dist-price { font-size:13px; font-weight:600; }
+.dist-pct   { font-size:10.5px; margin-top:1px; }
+.dist-danger .dist-price { color:var(--danger); }
+.dist-danger .dist-pct   { color:rgba(255,59,59,.65); }
+.dist-warn   .dist-price { color:var(--warn); }
+.dist-warn   .dist-pct   { color:rgba(255,176,32,.65); }
+.dist-watch  .dist-price { color:var(--watch); }
+.dist-watch  .dist-pct   { color:rgba(96,180,255,.6); }
+.dist-safe   .dist-price { color:var(--text-dim); }
+.dist-safe   .dist-pct   { color:var(--text-faint); }
+.dist-none   .dist-price { color:var(--text-faint); font-size:11.5px; }
 
-  /* ── CASCADE TABLE ── */
-  .section-hdr {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    margin-bottom: 12px;
-  }
-  .section-hdr h2 {
-    font-size: 11.5px;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: var(--text-dim);
-    font-weight: 600;
-  }
-  .section-hdr .meta { font-size: 11px; color: var(--text-faint); }
+.copy-btn {
+  background:none; border:1px solid var(--hairline);
+  color:var(--text-faint); font-family:'IBM Plex Mono',monospace;
+  font-size:9px; font-weight:600; letter-spacing:.04em;
+  padding:4px 8px; border-radius:4px; cursor:pointer; transition:all .12s; white-space:nowrap;
+}
+.copy-btn:hover { border-color:var(--bull); color:var(--bull); }
+.copy-btn.ok    { border-color:var(--bull); color:var(--bull); background:rgba(61,220,132,.08); }
 
-  .cascade {
-    border: 1px solid var(--hairline);
-    border-radius: 8px;
-    background: var(--panel);
-    overflow: hidden;
-  }
+/* ── ORDER PROJECTIONS ── */
+.order-grid {
+  display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr));
+  gap:10px; margin-bottom:20px;
+}
+.order-card {
+  background:var(--panel); border:1px solid var(--hairline);
+  border-radius:8px; overflow:hidden;
+}
+.order-card-hdr {
+  display:flex; justify-content:space-between; align-items:center;
+  padding:9px 14px; border-bottom:1px solid var(--hairline-soft);
+  background:rgba(255,255,255,.015);
+}
+.oc-lev { font-size:13px; font-weight:700; color:var(--text); }
+.oc-zone { font-size:11px; color:var(--text-dim); }
+.order-card-body { padding:11px 14px; }
+.order-row { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px; }
+.order-row:last-child { margin-bottom:0; }
+.or-label { font-size:9.5px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.08em; }
+.or-val   { font-size:12.5px; font-weight:600; }
+.or-val.entry  { color:var(--watch); }
+.or-val.stop   { color:var(--bear); }
+.or-val.tp     { color:var(--bull); }
+.or-val.rr     { color:var(--amber); }
+.oc-copy-wrap { margin-top:9px; }
+.oc-copy {
+  width:100%; background:rgba(96,180,255,.08); border:1px solid rgba(96,180,255,.2);
+  color:var(--watch); font-family:'IBM Plex Mono',monospace; font-size:9.5px;
+  font-weight:600; padding:6px 0; border-radius:4px; cursor:pointer; transition:all .12s; letter-spacing:.04em;
+}
+.oc-copy:hover { background:rgba(96,180,255,.15); }
+.oc-copy.ok    { background:rgba(61,220,132,.1); border-color:rgba(61,220,132,.3); color:var(--bull); }
+.no-orders { padding:16px 18px; font-size:11.5px; color:var(--text-faint); }
 
-  .cascade-row {
-    display: grid;
-    grid-template-columns: 52px 76px 1fr 148px 136px 92px;
-    align-items: center;
-    border-bottom: 1px solid var(--hairline-soft);
-    padding: 0 16px;
-    height: 60px;
-    transition: background 0.12s;
-    gap: 4px;
-  }
-  .cascade-row:last-child { border-bottom: none; }
-  .cascade-row:hover { background: var(--panel-raised); }
-  .cascade-row.done { opacity: 0.42; }
+/* ── FORMULA ── */
+.formula {
+  padding:13px 16px; border:1px solid var(--hairline); border-radius:8px;
+  background:var(--panel); font-size:11px; color:var(--text-faint); line-height:1.72;
+}
+.formula b { color:var(--text-dim); }
+.formula code {
+  color:var(--text-dim); background:var(--panel-raised);
+  padding:2px 5px; border-radius:3px; font-size:10.5px;
+}
+.legend { display:flex; gap:12px; flex-wrap:wrap; margin-top:6px; font-size:10.5px; }
+.legend span { display:flex; align-items:center; gap:4px; }
+.leg-sq { width:8px; height:8px; border-radius:2px; flex-shrink:0; }
 
-  .cascade-row.entry-row {
-    height: 40px;
-    background: rgba(255,255,255,0.018);
-  }
-  .entry-label {
-    font-size: 11px;
-    color: var(--text-dim);
-    letter-spacing: 0.05em;
-    grid-column: 3;
-  }
+footer { margin-top:30px; text-align:center; font-size:10.5px; color:var(--text-faint); }
 
-  .cascade-row.cluster-start { border-top: 1px solid rgba(240,168,48,0.28); }
-  .cascade-row.cluster-end   { border-bottom: 1px solid rgba(240,168,48,0.28) !important; }
-
-  .lev-badge {
-    font-size: 13px;
-    font-weight: 700;
-    color: var(--text);
-    background: var(--panel-raised);
-    border: 1px solid var(--hairline);
-    border-radius: 5px;
-    padding: 4px 0;
-    text-align: center;
-    width: 44px;
-  }
-  .done .lev-badge { color: var(--text-faint); border-color: var(--hairline-soft); }
-
-  /* Status badge */
-  .status-badge {
-    font-size: 8.5px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    padding: 3px 6px;
-    border-radius: 3px;
-    text-align: center;
-    white-space: nowrap;
-    display: inline-block;
-  }
-  .badge-danger { background: rgba(255,59,59,0.14); color: var(--danger); border: 1px solid rgba(255,59,59,0.28); }
-  .badge-warn   { background: rgba(255,176,32,0.12); color: var(--warn);   border: 1px solid rgba(255,176,32,0.24); }
-  .badge-watch  { background: rgba(96,180,255,0.10); color: var(--watch);  border: 1px solid rgba(96,180,255,0.22); }
-  .badge-safe   { color: var(--text-faint); border: 1px solid var(--hairline); }
-  .badge-done   { color: var(--text-faint); border: 1px solid var(--hairline-soft); background: transparent; }
-
-  /* Depth bar */
-  .depth-track {
-    position: relative;
-    height: 5px;
-    border-radius: 3px;
-    background: var(--hairline-soft);
-    margin: 0 10px;
-    overflow: hidden;
-  }
-  .depth-fill {
-    position: absolute;
-    inset: 0 auto 0 0;
-    border-radius: 3px;
-    transition: width 0.4s cubic-bezier(0.16,1,0.3,1);
-  }
-
-  /* Liq price column */
-  .liq-col { }
-  .liq-price { font-size: 16px; font-weight: 600; }
-  .liq-sub   { font-size: 11px; color: var(--text-faint); margin-top: 1px; }
-  .cluster-pip {
-    display: inline-block;
-    font-size: 8px;
-    font-weight: 700;
-    padding: 2px 5px;
-    border-radius: 10px;
-    background: rgba(240,168,48,0.1);
-    border: 1px solid rgba(240,168,48,0.28);
-    color: var(--amber);
-    margin-left: 5px;
-    vertical-align: middle;
-  }
-
-  /* Distance from live price */
-  .dist-col { text-align: right; }
-  .dist-price { font-size: 14px; font-weight: 600; }
-  .dist-pct   { font-size: 11px; margin-top: 1px; }
-  .dist-danger .dist-price { color: var(--danger); }
-  .dist-danger .dist-pct   { color: rgba(255,59,59,0.65); }
-  .dist-warn   .dist-price { color: var(--warn); }
-  .dist-warn   .dist-pct   { color: rgba(255,176,32,0.65); }
-  .dist-watch  .dist-price { color: var(--watch); }
-  .dist-watch  .dist-pct   { color: rgba(96,180,255,0.6); }
-  .dist-safe   .dist-price { color: var(--text-dim); }
-  .dist-safe   .dist-pct   { color: var(--text-faint); }
-  .dist-none   .dist-price { color: var(--text-faint); font-size: 12px; }
-
-  /* Copy button */
-  .copy-btn {
-    background: none;
-    border: 1px solid var(--hairline);
-    color: var(--text-faint);
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 9.5px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    padding: 5px 9px;
-    border-radius: 5px;
-    cursor: pointer;
-    transition: all 0.12s;
-    white-space: nowrap;
-  }
-  .copy-btn:hover { border-color: var(--bull); color: var(--bull); }
-  .copy-btn.ok    { border-color: var(--bull); color: var(--bull); background: rgba(61,220,132,0.08); }
-
-  /* ── FORMULA ── */
-  .formula {
-    margin-top: 18px;
-    padding: 14px 17px;
-    border: 1px solid var(--hairline);
-    border-radius: 8px;
-    background: var(--panel);
-    font-size: 11.5px;
-    color: var(--text-faint);
-    line-height: 1.72;
-  }
-  .formula b { color: var(--text-dim); }
-  .formula code {
-    color: var(--text-dim);
-    background: var(--panel-raised);
-    padding: 2px 5px;
-    border-radius: 3px;
-    font-size: 11px;
-  }
-  .legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 6px; font-size: 11px; }
-  .legend span { display: flex; align-items: center; gap: 4px; }
-  .leg-sq {
-    width: 9px; height: 9px;
-    border-radius: 2px;
-    flex-shrink: 0;
-  }
-
-  footer {
-    margin-top: 34px;
-    text-align: center;
-    font-size: 11px;
-    color: var(--text-faint);
-  }
-
-  /* ── RESPONSIVE ── */
-  @media (max-width: 900px) {
-    .controls { grid-template-columns: 1fr 1fr; }
-  }
-  @media (max-width: 700px) {
-    .cascade-row {
-      grid-template-columns: 44px 64px 1fr 100px;
-      height: auto;
-      padding: 11px 12px;
-      gap: 6px;
-    }
-    .dist-col, .copy-btn-wrap { display: none; }
-    .depth-track { margin: 0 6px; }
-    .controls { grid-template-columns: 1fr; }
-    .tray { grid-template-columns: 1fr; }
-    header { flex-direction: column; }
-    .price-widget { text-align: left; }
-    .price-widget .pw-label { justify-content: flex-start; }
-  }
-
-  input:focus, button:focus, .tier-chip:focus, .side-btn:focus, .ex-btn:focus {
-    outline: 2px solid var(--bull);
-    outline-offset: 1px;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after { transition: none !important; animation: none !important; }
-  }
+/* ── RESPONSIVE ── */
+@media(max-width:1000px) {
+  .chart-section { grid-template-columns:1fr; }
+  .liq-feed { border-top:1px solid var(--hairline); max-height:280px; }
+  .feed-list { max-height:200px; }
+}
+@media(max-width:760px) {
+  .controls { grid-template-columns:1fr 1fr; }
+  .cascade-row { grid-template-columns:42px 62px 1fr 90px; height:auto; padding:10px 12px; gap:5px; }
+  .dist-col,.copy-btn { display:none; }
+  .depth-track { display:none; }
+}
+@media(max-width:500px) {
+  .controls,.tray { grid-template-columns:1fr; }
+  header { flex-direction:column; }
+  .price-widget { text-align:left; }
+  .pw-label { justify-content:flex-start; }
+}
+input:focus,button:focus,.tier-chip:focus,.side-btn:focus,.ex-btn:focus,.iv-btn:focus {
+  outline:2px solid var(--bull); outline-offset:1px;
+}
+@media(prefers-reduced-motion:reduce) {
+  *,*::before,*::after { transition:none !important; animation:none !important; }
+}
 </style>
 </head>
 <body>
-
 <div class="wrap">
 
-  <header>
-    <div>
-      <div class="brand">
-        <span class="mark"></span>
-        <h1 class="display">CASCADE</h1>
-      </div>
-      <p class="tagline">Liquidation zone calculator — where over-leveraged positions force-close</p>
+<header>
+  <div>
+    <div class="brand"><span class="mark"></span><h1 class="display">CASCADE</h1></div>
+    <p class="tagline">Liquidation zone calculator · live chart · real-time liq feed</p>
+  </div>
+  <div class="price-widget">
+    <div class="pw-label">BTC/USDT <span class="ws-dot" id="wsDot"></span></div>
+    <div class="price-row">
+      <div id="livePrice" class="loading">connecting…</div>
+      <div class="price-change" id="priceChange"></div>
     </div>
+    <div id="priceSource">—</div>
+  </div>
+</header>
 
-    <div class="price-widget">
-      <div class="pw-label">
-        BTC / USDT
-        <span class="ws-dot" id="wsDot"></span>
+<div class="honesty">
+  <span class="dot">▲</span>
+  <div>
+    <b>Liquidation zones show where force-closes happen — not guaranteed bounces.</b>
+    Liq orders are market sells that remove resting bids. A cascade happens when one zone's selling volume drives price into the next. Use these as <b>attention zones and order placement guides</b>, not guarantees.
+  </div>
+</div>
+
+<!-- Chart + Liq Feed -->
+<div class="chart-section">
+  <div class="chart-wrap">
+    <div class="chart-toolbar">
+      <span class="ct-label" id="chartLabel">BTC/USDT · 15m — liq zones overlaid</span>
+      <div class="iv-btns">
+        <button class="iv-btn" data-iv="5m"  data-secs="300">5m</button>
+        <button class="iv-btn active" data-iv="15m" data-secs="900">15m</button>
+        <button class="iv-btn" data-iv="1h"  data-secs="3600">1h</button>
       </div>
-      <div class="price-row">
-        <div id="livePrice" class="loading">connecting…</div>
-        <div class="price-change" id="priceChange"></div>
-      </div>
-      <div id="priceSource">—</div>
     </div>
-  </header>
-
-  <div class="honesty">
-    <span class="dot">▲</span>
-    <div>
-      <b>Liquidation zones mark where stops get hit, not guaranteed bounces.</b>
-      When longs are force-closed, their market sell orders remove resting bids. A cascade happens when one zone's liquidation volume drives price into the next. Use these levels as <b>attention zones</b>, not guaranteed support.
+    <div id="chartDiv"></div>
+  </div>
+  <div class="liq-feed">
+    <div class="feed-hdr">
+      <span>LIVE LIQUIDATIONS · BYBIT</span>
+      <span class="feed-dot" id="feedDot"></span>
+    </div>
+    <div class="feed-stats">
+      <div class="feed-stat" id="statLongVol">
+        <div class="sv" id="svLong">$0</div>
+        <div class="sl">Long liq 1m</div>
+      </div>
+      <div class="feed-stat" id="statShortVol">
+        <div class="sv" id="svShort">$0</div>
+        <div class="sl">Short liq 1m</div>
+      </div>
+      <div class="feed-stat">
+        <div class="sv" id="svCount">0</div>
+        <div class="sl">Events 1m</div>
+      </div>
+    </div>
+    <div class="feed-list" id="feedList">
+      <div class="feed-empty">Connecting to Bybit…</div>
     </div>
   </div>
+</div>
 
-  <!-- Controls -->
-  <div class="controls">
-
-    <div class="field">
-      <label for="highPrice">Rejected high / entry</label>
-      <div class="input-row">
-        <span class="suffix">$</span>
-        <input type="number" id="highPrice" value="71400" step="1" inputmode="decimal">
-      </div>
-      <div class="side-toggle">
-        <button class="side-btn active long" id="sideLong">LONGS</button>
-        <button class="side-btn short" id="sideShort">SHORTS</button>
-      </div>
+<!-- Controls -->
+<div class="controls">
+  <div class="field">
+    <label for="highPrice">Rejected high / entry</label>
+    <div class="input-row">
+      <span class="suffix">$</span>
+      <input type="number" id="highPrice" value="71400" step="1" inputmode="decimal">
     </div>
-
-    <div class="field">
-      <label>Exchange preset</label>
-      <div class="ex-row" id="exRow">
-        <button class="ex-btn active" data-maint="0.40" data-fee="0.05">BINANCE</button>
-        <button class="ex-btn"        data-maint="0.50" data-fee="0.055">BYBIT</button>
-        <button class="ex-btn"        data-maint="0.50" data-fee="0.05">OKX</button>
-        <button class="ex-btn"        data-maint="0.50" data-fee="0.045">HYPER</button>
-      </div>
-      <div class="margin-row">
-        <label>Maint %</label>
-        <input type="number" id="maintMargin" value="0.40" step="0.05" min="0" max="5">
-        <label>Fee %</label>
-        <input type="number" id="feeBuffer" value="0.05" step="0.01" min="0" max="2">
-      </div>
-    </div>
-
-    <div class="field">
-      <label>Leverage tiers to plot</label>
-      <div class="tier-list" id="tierList">
-        <span class="tier-chip active" data-lev="5">5x</span>
-        <span class="tier-chip active" data-lev="10">10x</span>
-        <span class="tier-chip active" data-lev="20">20x</span>
-        <span class="tier-chip active" data-lev="25">25x</span>
-        <span class="tier-chip active" data-lev="50">50x</span>
-        <span class="tier-chip active" data-lev="75">75x</span>
-        <span class="tier-chip active" data-lev="100">100x</span>
-      </div>
-    </div>
-
-    <div class="field">
-      <label for="highPrice2">Second scenario (optional)</label>
-      <div class="input-row">
-        <span class="suffix">$</span>
-        <input type="number" id="highPrice2" placeholder="e.g. 68 000" step="1" inputmode="decimal" class="sub-input">
-      </div>
-      <div style="font-size:10px;color:var(--text-faint);margin-top:7px;line-height:1.5;">
-        Track a second high (e.g. weekly / ATH) — its zones shown in the table as H2
-      </div>
-    </div>
-
-  </div>
-
-  <!-- Decision tray -->
-  <div class="tray" id="tray">
-    <div class="tray-cell" id="tc0">
-      <div class="tc-label">Nearest zone from live price</div>
-      <div class="tc-val" id="tv0">—</div>
-      <div class="tc-meta" id="tm0">awaiting price feed</div>
-    </div>
-    <div class="tray-cell" id="tc1">
-      <div class="tc-label">Next zone if cascade starts</div>
-      <div class="tc-val" id="tv1">—</div>
-      <div class="tc-meta" id="tm1"></div>
-    </div>
-    <div class="tray-cell" id="tc2">
-      <div class="tc-label">Full cascade span</div>
-      <div class="tc-val" id="tv2">—</div>
-      <div class="tc-meta" id="tm2"></div>
+    <div class="side-toggle">
+      <button class="side-btn active long" id="sideLong">LONGS</button>
+      <button class="side-btn short" id="sideShort">SHORTS</button>
     </div>
   </div>
-
-  <!-- Cascade table -->
-  <div class="section-hdr">
-    <h2 id="cascadeTitle">Cascade zones</h2>
-    <span class="meta" id="cascadeMeta"></span>
-  </div>
-  <div class="cascade" id="cascade"></div>
-
-  <!-- Formula / legend -->
-  <div class="formula">
-    <b>Formula (isolated margin) ·</b>
-    Long liq ≈ <code>entry × (1 − 1/lev + maint% + fee%)</code> &nbsp;·&nbsp;
-    Short liq ≈ <code>entry × (1 + 1/lev − maint% − fee%)</code><br>
-    Cross-margin, partial liquidation tiers, and mark-price deviations are not modelled — real prices vary by venue and position size.
-    <div class="legend">
-      <span><span class="leg-sq" style="background:var(--danger)"></span> DANGER &lt;2% from price</span>
-      <span><span class="leg-sq" style="background:var(--warn)"></span> WARNING &lt;5%</span>
-      <span><span class="leg-sq" style="background:var(--watch)"></span> WATCH &lt;10%</span>
-      <span><span class="leg-sq" style="background:var(--text-faint)"></span> SAFE &gt;10%</span>
-      <span><span class="leg-sq" style="background:var(--done)"></span> DONE — zone already passed</span>
-      <span><span class="leg-sq" style="background:var(--amber)"></span> CLUSTER — multiple tiers within 1.5%</span>
+  <div class="field">
+    <label>Exchange preset</label>
+    <div class="ex-row" id="exRow">
+      <button class="ex-btn active" data-maint="0.40" data-fee="0.05">BINANCE</button>
+      <button class="ex-btn"        data-maint="0.50" data-fee="0.055">BYBIT</button>
+      <button class="ex-btn"        data-maint="0.50" data-fee="0.05">OKX</button>
+      <button class="ex-btn"        data-maint="0.50" data-fee="0.045">HYPER</button>
+    </div>
+    <div class="margin-row">
+      <label>Maint %</label>
+      <input type="number" id="maintMargin" value="0.40" step="0.05" min="0" max="5">
+      <label>Fee %</label>
+      <input type="number" id="feeBuffer"   value="0.05" step="0.01" min="0" max="2">
     </div>
   </div>
+  <div class="field">
+    <label>Leverage tiers</label>
+    <div class="tier-list" id="tierList">
+      <span class="tier-chip active" data-lev="5">5x</span>
+      <span class="tier-chip active" data-lev="10">10x</span>
+      <span class="tier-chip active" data-lev="20">20x</span>
+      <span class="tier-chip active" data-lev="25">25x</span>
+      <span class="tier-chip active" data-lev="50">50x</span>
+      <span class="tier-chip active" data-lev="75">75x</span>
+      <span class="tier-chip active" data-lev="100">100x</span>
+    </div>
+  </div>
+  <div class="field">
+    <label for="highPrice2">Second scenario (optional)</label>
+    <div class="input-row">
+      <span class="suffix">$</span>
+      <input type="number" id="highPrice2" placeholder="e.g. 68000" step="1" inputmode="decimal" style="font-size:16px;">
+    </div>
+    <div style="font-size:9.5px;color:var(--text-faint);margin-top:6px;line-height:1.5;">
+      Second high overlaid as H2 · zones shown in table
+    </div>
+  </div>
+</div>
 
-  <footer>No data stored or sent except to public price feeds · Not financial advice</footer>
+<!-- Decision tray -->
+<div class="tray">
+  <div class="tray-cell" id="tc0">
+    <div class="tc-label">Nearest zone from live price</div>
+    <div class="tc-val" id="tv0">—</div>
+    <div class="tc-meta" id="tm0">awaiting price feed</div>
+  </div>
+  <div class="tray-cell" id="tc1">
+    <div class="tc-label">Next if cascade starts</div>
+    <div class="tc-val" id="tv1">—</div>
+    <div class="tc-meta" id="tm1"></div>
+  </div>
+  <div class="tray-cell" id="tc2">
+    <div class="tc-label">Full cascade span</div>
+    <div class="tc-val" id="tv2">—</div>
+    <div class="tc-meta" id="tm2"></div>
+  </div>
+</div>
 
+<!-- Cascade table -->
+<div class="section-hdr">
+  <h2 id="cascadeTitle">Cascade zones</h2>
+  <span class="meta" id="cascadeMeta"></span>
+</div>
+<div class="cascade" id="cascade"></div>
+
+<!-- Order projections -->
+<div class="section-hdr" style="margin-top:22px;">
+  <h2>Suggested limit orders</h2>
+  <span class="meta" id="orderMeta">wick-buy entries · 0.25% inside zone</span>
+</div>
+<div class="order-grid" id="orderGrid"></div>
+
+<!-- Formula -->
+<div class="formula">
+  <b>Formula (isolated margin) ·</b>
+  Long liq ≈ <code>entry × (1 − 1/lev + maint% + fee%)</code> &nbsp;·&nbsp;
+  Short liq ≈ <code>entry × (1 + 1/lev − maint% − fee%)</code><br>
+  <b>Order projections</b>: entry = 0.25% inside zone (wick-buy), stop = 0.75% beyond zone, TP1 = next zone, TP2 = 1.5× extension. Not financial advice.
+  <div class="legend">
+    <span><span class="leg-sq" style="background:var(--danger)"></span>DANGER &lt;2%</span>
+    <span><span class="leg-sq" style="background:var(--warn)"></span>WARNING &lt;5%</span>
+    <span><span class="leg-sq" style="background:var(--watch)"></span>WATCH &lt;10%</span>
+    <span><span class="leg-sq" style="background:var(--text-faint)"></span>SAFE</span>
+    <span><span class="leg-sq" style="background:var(--done)"></span>DONE — already passed</span>
+    <span><span class="leg-sq" style="background:var(--amber)"></span>CLUSTER — tiers within 1.5%</span>
+  </div>
+</div>
+
+<footer>No data stored · price via Binance/Kraken · liq events via Bybit public stream · Not financial advice</footer>
 </div>
 
 <script>
 (function () {
-  'use strict';
+'use strict';
 
-  // ── DOM ──────────────────────────────────────────────────────────────────
-  const highInput  = document.getElementById('highPrice');
-  const highInput2 = document.getElementById('highPrice2');
-  const maintInput = document.getElementById('maintMargin');
-  const feeInput   = document.getElementById('feeBuffer');
-  const cascadeEl  = document.getElementById('cascade');
-  const titleEl    = document.getElementById('cascadeTitle');
-  const metaEl     = document.getElementById('cascadeMeta');
-  const priceEl    = document.getElementById('livePrice');
-  const changeEl   = document.getElementById('priceChange');
-  const sourceEl   = document.getElementById('priceSource');
-  const wsDot      = document.getElementById('wsDot');
-  const tierChips  = document.querySelectorAll('.tier-chip');
-  const sideLong   = document.getElementById('sideLong');
-  const sideShort  = document.getElementById('sideShort');
+// ── DOM ──────────────────────────────────────────────────────────────────
+const highInput  = document.getElementById('highPrice');
+const highInput2 = document.getElementById('highPrice2');
+const maintInput = document.getElementById('maintMargin');
+const feeInput   = document.getElementById('feeBuffer');
+const cascadeEl  = document.getElementById('cascade');
+const titleEl    = document.getElementById('cascadeTitle');
+const metaEl     = document.getElementById('cascadeMeta');
+const priceEl    = document.getElementById('livePrice');
+const changeEl   = document.getElementById('priceChange');
+const sourceEl   = document.getElementById('priceSource');
+const wsDot      = document.getElementById('wsDot');
+const tierChips  = document.querySelectorAll('.tier-chip');
+const sideLong   = document.getElementById('sideLong');
+const sideShort  = document.getElementById('sideShort');
+const orderGrid  = document.getElementById('orderGrid');
 
-  let side = 'long';
-  let livePrice = null;
-  let prevPrice = null;
-  let ws = null;
-  let wsAlive = false;
-  let flashTimer = null;
+// ── State ─────────────────────────────────────────────────────────────────
+let side = 'long';
+let livePrice = null;
+let prevPrice = null;
+let ws = null;
+let wsAlive = false;
+let wsIdx = 0;
+let wsTimer = null;
+let flashTimer = null;
+let currentIvSecs = 900;       // 15m default
+let currentIvLabel = '15m';
+let currentCandle = null;      // {time,open,high,low,close} for live update
+let priceLines = [];           // LW chart price lines
+let liqMarkers = [];           // accumulated markers for chart
+let lastZones = [];            // last computed zones (for chart line update)
 
-  // ── Helpers ──────────────────────────────────────────────────────────────
-  function fmt(n, dec = 2) {
-    return n.toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec });
-  }
+// Chart objects (null until LW loads)
+let chart = null;
+let candleSeries = null;
 
-  function computeLiq(entry, lev, maint, fee, s) {
-    const cushion = (1 / lev) - (maint / 100) - (fee / 100);
-    return s === 'long' ? entry * (1 - cushion) : entry * (1 + cushion);
-  }
+// ── Utils ────────────────────────────────────────────────────────────────
+function fmt(n, dec) {
+  dec = dec === undefined ? 2 : dec;
+  return n.toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+}
+function fmtUsd(v) {
+  if (v >= 1e6) return '$' + (v / 1e6).toFixed(2) + 'M';
+  if (v >= 1e3) return '$' + (v / 1e3).toFixed(0) + 'K';
+  return '$' + v.toFixed(0);
+}
+function computeLiq(entry, lev, maint, fee, s) {
+  var cushion = (1 / lev) - (maint / 100) - (fee / 100);
+  return s === 'long' ? entry * (1 - cushion) : entry * (1 + cushion);
+}
+function getStatus(absPct) {
+  if (absPct < 2)  return 'danger';
+  if (absPct < 5)  return 'warn';
+  if (absPct < 10) return 'watch';
+  return 'safe';
+}
+function activeTiers() {
+  return Array.from(tierChips)
+    .filter(function(c){ return c.classList.contains('active'); })
+    .map(function(c){ return +c.dataset.lev; })
+    .sort(function(a,b){ return a-b; });
+}
 
-  function getStatus(absPct) {
-    if (absPct < 2)  return 'danger';
-    if (absPct < 5)  return 'warn';
-    if (absPct < 10) return 'watch';
-    return 'safe';
-  }
-
-  function activeTiers() {
-    return Array.from(tierChips)
-      .filter(c => c.classList.contains('active'))
-      .map(c => +c.dataset.lev)
-      .sort((a, b) => a - b);
-  }
-
-  // ── Exchange presets ──────────────────────────────────────────────────────
-  document.querySelectorAll('.ex-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.ex-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      maintInput.value = btn.dataset.maint;
-      feeInput.value   = btn.dataset.fee;
-      render();
-    });
-  });
-
-  // ── Tier chips ───────────────────────────────────────────────────────────
-  tierChips.forEach(c => c.addEventListener('click', () => { c.classList.toggle('active'); render(); }));
-
-  // ── Side toggle ──────────────────────────────────────────────────────────
-  sideLong.addEventListener('click', () => {
-    side = 'long';
-    sideLong.classList.add('active'); sideShort.classList.remove('active');
+// ── Exchange presets ──────────────────────────────────────────────────────
+document.querySelectorAll('.ex-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('.ex-btn').forEach(function(b){ b.classList.remove('active'); });
+    btn.classList.add('active');
+    maintInput.value = btn.dataset.maint;
+    feeInput.value   = btn.dataset.fee;
     render();
   });
-  sideShort.addEventListener('click', () => {
-    side = 'short';
-    sideShort.classList.add('active'); sideLong.classList.remove('active');
-    render();
+});
+
+// ── Interval buttons ──────────────────────────────────────────────────────
+document.querySelectorAll('.iv-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('.iv-btn').forEach(function(b){ b.classList.remove('active'); });
+    btn.classList.add('active');
+    currentIvSecs  = +btn.dataset.secs;
+    currentIvLabel = btn.dataset.iv;
+    document.getElementById('chartLabel').textContent = 'BTC/USDT · ' + currentIvLabel + ' — liq zones overlaid';
+    currentCandle = null;
+    loadCandles();
   });
+});
 
-  // ── Input listeners ──────────────────────────────────────────────────────
-  [highInput, highInput2, maintInput, feeInput].forEach(el => el.addEventListener('input', render));
+// ── Tier chips ───────────────────────────────────────────────────────────
+tierChips.forEach(function(c) {
+  c.addEventListener('click', function(){ c.classList.toggle('active'); render(); });
+});
+sideLong.addEventListener('click', function(){
+  side = 'long'; sideLong.classList.add('active'); sideShort.classList.remove('active'); render();
+});
+sideShort.addEventListener('click', function(){
+  side = 'short'; sideShort.classList.add('active'); sideLong.classList.remove('active'); render();
+});
+[highInput, highInput2, maintInput, feeInput].forEach(function(el){
+  el.addEventListener('input', render);
+});
 
-  // ── Render ───────────────────────────────────────────────────────────────
-  function render() {
-    const entry  = parseFloat(highInput.value)  || 0;
-    const entry2 = parseFloat(highInput2.value) || 0;
-    const maint  = parseFloat(maintInput.value) || 0;
-    const fee    = parseFloat(feeInput.value)   || 0;
-    const tiers  = activeTiers();
+// ── RENDER ────────────────────────────────────────────────────────────────
+function render() {
+  var entry  = parseFloat(highInput.value)  || 0;
+  var entry2 = parseFloat(highInput2.value) || 0;
+  var maint  = parseFloat(maintInput.value) || 0;
+  var fee    = parseFloat(feeInput.value)   || 0;
+  var tiers  = activeTiers();
 
-    titleEl.textContent = side === 'long'
-      ? 'Cascade below the high — longs liquidated as price falls'
-      : 'Cascade above the high — shorts liquidated as price rises';
-    metaEl.textContent = tiers.length + ' tier' + (tiers.length !== 1 ? 's' : '');
+  titleEl.textContent = side === 'long'
+    ? 'Cascade below the high — longs liquidated as price falls'
+    : 'Cascade above the high — shorts liquidated as price rises';
+  metaEl.textContent = tiers.length + ' tier' + (tiers.length !== 1 ? 's' : '');
 
-    cascadeEl.innerHTML = '';
+  cascadeEl.innerHTML = '';
 
-    // entry row
-    const erow = document.createElement('div');
-    erow.className = 'cascade-row entry-row';
-    erow.innerHTML = '<div></div><div></div><div class="entry-label">▶ Rejected high — $' + fmt(entry) + '</div><div></div><div></div><div></div>';
-    cascadeEl.appendChild(erow);
+  // Entry row
+  var erow = document.createElement('div');
+  erow.className = 'cascade-row entry-row';
+  erow.innerHTML = '<div></div><div></div><div class="entry-label">▶ Rejected high — $' + fmt(entry) + '</div><div></div><div></div><div></div>';
+  cascadeEl.appendChild(erow);
 
-    if (!tiers.length || entry <= 0) {
-      const empty = document.createElement('div');
-      empty.className = 'cascade-row';
-      empty.style.cssText = 'color:var(--text-faint);font-size:12px;display:flex;align-items:center;padding:18px;';
-      empty.textContent = !tiers.length ? 'Select at least one leverage tier above.' : 'Enter a rejected high price.';
-      cascadeEl.appendChild(empty);
-      updateTray([], side);
-      return;
-    }
+  if (!tiers.length || entry <= 0) {
+    var empty = document.createElement('div');
+    empty.className = 'cascade-row';
+    empty.style.cssText = 'color:var(--text-faint);font-size:11.5px;display:flex;align-items:center;padding:16px;';
+    empty.textContent = !tiers.length ? 'Select at least one leverage tier above.' : 'Enter a rejected high price.';
+    cascadeEl.appendChild(empty);
+    lastZones = [];
+    updateTray([], side);
+    updateChartLines([]);
+    renderOrders([]);
+    return;
+  }
 
-    // Build zone list
-    const zones = tiers.map(lev => ({
-      lev,
-      price: computeLiq(entry, lev, maint, fee, side),
+  // Build zones
+  var zones = tiers.map(function(lev) {
+    return {
+      lev: lev,
+      price:  computeLiq(entry, lev, maint, fee, side),
       price2: entry2 > 0 ? computeLiq(entry2, lev, maint, fee, side) : null,
-    }));
+      status: 'safe',
+      isDone: false,
+    };
+  });
 
-    // Sort: for longs, highest liq price first (closest to entry = highest lev hits first when price drops)
-    // For shorts, lowest liq price first (closest to entry)
-    zones.sort((a, b) => side === 'long' ? b.price - a.price : a.price - b.price);
+  // Sort: for longs, highest price first (100x liq is closest to entry = first to hit)
+  zones.sort(function(a,b){ return side === 'long' ? b.price - a.price : a.price - b.price; });
 
-    const maxDrop = Math.max(...zones.map(z => Math.abs(entry - z.price)));
+  var maxDrop = 0;
+  zones.forEach(function(z){ var d = Math.abs(entry - z.price); if (d > maxDrop) maxDrop = d; });
 
-    // Cluster detection: adjacent zones within 1.5% of each other
-    const clusterSet = new Set();
-    for (let i = 0; i < zones.length - 1; i++) {
-      const gap = Math.abs(zones[i].price - zones[i + 1].price) / Math.max(zones[i].price, zones[i + 1].price);
-      if (gap < 0.015) { clusterSet.add(i); clusterSet.add(i + 1); }
+  // Cluster detection
+  var clusterSet = new Set();
+  for (var i = 0; i < zones.length - 1; i++) {
+    var gap = Math.abs(zones[i].price - zones[i+1].price) / Math.max(zones[i].price, zones[i+1].price);
+    if (gap < 0.015) { clusterSet.add(i); clusterSet.add(i+1); }
+  }
+  var clusterStart = new Set(), clusterEnd = new Set();
+  clusterSet.forEach(function(idx) {
+    if (!clusterSet.has(idx-1)) clusterStart.add(idx);
+    if (!clusterSet.has(idx+1)) clusterEnd.add(idx);
+  });
+
+  zones.forEach(function(z, i) {
+    var dropPct  = ((z.price - entry) / entry) * 100;
+    var dropAbs  = Math.abs(entry - z.price);
+    var barWidth = maxDrop > 0 ? (dropAbs / maxDrop) * 100 : 0;
+    var intensity = Math.min(z.lev / 100, 1);
+    var barColor  = side === 'long'
+      ? 'rgba(255,92,92,'  + (0.22 + intensity * 0.68) + ')'
+      : 'rgba(61,220,132,' + (0.22 + intensity * 0.68) + ')';
+
+    var isDone = false, statusKey = 'safe', statusLabel = 'SAFE', distHtml = '<div class="dist-price">—</div>', distClass = 'dist-none';
+
+    if (livePrice) {
+      isDone = side === 'long' ? livePrice <= z.price : livePrice >= z.price;
+      var dist    = z.price - livePrice;
+      var distPct = (dist / livePrice) * 100;
+      var sign    = dist >= 0 ? '+' : '';
+      if (isDone) {
+        statusKey = 'done'; statusLabel = 'DONE';
+        distHtml  = '<div class="dist-price" style="color:var(--text-faint);font-size:11px;">triggered</div>';
+      } else {
+        statusKey = getStatus(Math.abs(distPct));
+        statusLabel = { danger:'DANGER', warn:'WARNING', watch:'WATCH', safe:'SAFE' }[statusKey];
+        distClass   = 'dist-' + statusKey;
+        distHtml    = '<div class="dist-price">' + sign + '$' + fmt(Math.abs(dist)) + '</div><div class="dist-pct">' + sign + distPct.toFixed(2) + '% from now</div>';
+      }
     }
 
-    // Find cluster boundaries for border styling
-    const clusterStart = new Set();
-    const clusterEnd   = new Set();
-    for (const idx of clusterSet) {
-      if (!clusterSet.has(idx - 1)) clusterStart.add(idx);
-      if (!clusterSet.has(idx + 1)) clusterEnd.add(idx);
+    z.status = statusKey;
+    z.isDone = isDone;
+
+    var clusterPip = clusterSet.has(i) ? '<span class="cluster-pip">CLUSTER</span>' : '';
+    var h2Html = '';
+    if (z.price2 !== null) {
+      var d2 = ((z.price2 - entry2) / entry2) * 100;
+      h2Html = ' · H2 $' + fmt(z.price2) + ' (' + (d2 > 0 ? '+' : '') + d2.toFixed(2) + '%)';
     }
 
-    zones.forEach((z, i) => {
-      const dropPct  = ((z.price - entry) / entry) * 100;
-      const dropAbs  = Math.abs(entry - z.price);
-      const barWidth = maxDrop > 0 ? (dropAbs / maxDrop) * 100 : 0;
+    var rowClass = 'cascade-row' + (isDone ? ' done' : '') + (clusterStart.has(i) ? ' cluster-start' : '') + (clusterEnd.has(i) ? ' cluster-end' : '');
+    var row = document.createElement('div');
+    row.className = rowClass;
+    row.innerHTML =
+      '<div class="lev-badge">' + z.lev + 'x</div>' +
+      '<div><span class="status-badge badge-' + statusKey + '">' + statusLabel + '</span></div>' +
+      '<div class="depth-track"><div class="depth-fill" style="width:' + barWidth + '%;background:' + barColor + '"></div></div>' +
+      '<div><div class="liq-price">$' + fmt(z.price) + clusterPip + '</div><div class="liq-sub">' + (dropPct > 0 ? '+' : '') + dropPct.toFixed(2) + '% from high' + h2Html + '</div></div>' +
+      '<div class="dist-col ' + distClass + '">' + distHtml + '</div>' +
+      '<div><button class="copy-btn" data-price="' + z.price.toFixed(2) + '">SET LIMIT</button></div>';
 
-      const intensity = Math.min(z.lev / 100, 1);
-      const barColor  = side === 'long'
-        ? `rgba(255,92,92,${0.22 + intensity * 0.68})`
-        : `rgba(61,220,132,${0.22 + intensity * 0.68})`;
-
-      // Zone status relative to live price
-      let isDone = false;
-      let statusClass = 'badge-safe';
-      let statusLabel = 'SAFE';
-      let distHtml = '<div class="dist-price">—</div>';
-      let distClass = 'dist-none';
-
-      if (livePrice) {
-        // "Done" = zone has already been passed (price moved through it from the entry side)
-        isDone = side === 'long' ? livePrice <= z.price : livePrice >= z.price;
-        const dist    = z.price - livePrice;
-        const distPct = (dist / livePrice) * 100;
-        const absPct  = Math.abs(distPct);
-        const sign    = dist >= 0 ? '+' : '';
-
-        if (isDone) {
-          statusClass = 'badge-done'; statusLabel = 'DONE';
-          distClass = 'dist-none';
-          distHtml  = '<div class="dist-price" style="color:var(--text-faint);font-size:12px;">triggered</div>';
-        } else {
-          const s = getStatus(absPct);
-          statusClass = 'badge-' + s;
-          statusLabel = { danger:'DANGER', warn:'WARNING', watch:'WATCH', safe:'SAFE' }[s];
-          distClass   = 'dist-' + s;
-          distHtml    = `
-            <div class="dist-price">${sign}$${fmt(Math.abs(dist))}</div>
-            <div class="dist-pct">${sign}${distPct.toFixed(2)}% from now</div>
-          `;
-        }
-      }
-
-      const clusterPip = clusterSet.has(i) ? '<span class="cluster-pip">CLUSTER</span>' : '';
-
-      let h2Html = '';
-      if (z.price2 !== null) {
-        const d2 = ((z.price2 - entry2) / entry2) * 100;
-        h2Html = ` · H2 $${fmt(z.price2)} (${d2 > 0 ? '+' : ''}${d2.toFixed(2)}%)`;
-      }
-
-      const row = document.createElement('div');
-      let rowClass = 'cascade-row';
-      if (isDone)              rowClass += ' done';
-      if (clusterStart.has(i)) rowClass += ' cluster-start';
-      if (clusterEnd.has(i))   rowClass += ' cluster-end';
-      row.className = rowClass;
-
-      row.innerHTML = `
-        <div class="lev-badge">${z.lev}x</div>
-        <div><span class="status-badge ${statusClass}">${statusLabel}</span></div>
-        <div class="depth-track"><div class="depth-fill" style="width:${barWidth}%;background:${barColor}"></div></div>
-        <div class="liq-col">
-          <div class="liq-price">$${fmt(z.price)}${clusterPip}</div>
-          <div class="liq-sub">${dropPct > 0 ? '+' : ''}${dropPct.toFixed(2)}% from high${h2Html}</div>
-        </div>
-        <div class="dist-col ${distClass}">${distHtml}</div>
-        <div class="copy-btn-wrap">
-          <button class="copy-btn" data-price="${z.price.toFixed(2)}">SET LIMIT</button>
-        </div>
-      `;
-
-      row.querySelector('.copy-btn').addEventListener('click', function () {
-        navigator.clipboard?.writeText(this.dataset.price).catch(() => {});
-        this.textContent = 'COPIED';
-        this.classList.add('ok');
-        setTimeout(() => { this.textContent = 'SET LIMIT'; this.classList.remove('ok'); }, 1200);
-      });
-
-      cascadeEl.appendChild(row);
+    row.querySelector('.copy-btn').addEventListener('click', function() {
+      var btn = this;
+      navigator.clipboard && navigator.clipboard.writeText(btn.dataset.price).catch(function(){});
+      btn.textContent = 'COPIED'; btn.classList.add('ok');
+      setTimeout(function(){ btn.textContent = 'SET LIMIT'; btn.classList.remove('ok'); }, 1200);
     });
 
-    updateTray(zones, side);
+    cascadeEl.appendChild(row);
+  });
+
+  lastZones = zones;
+  updateTray(zones, side);
+  updateChartLines(zones);
+  renderOrders(zones);
+}
+
+// ── Decision tray ─────────────────────────────────────────────────────────
+function updateTray(zones, s) {
+  var tc = [0,1,2].map(function(i){ return document.getElementById('tc'+i); });
+  var tv = [0,1,2].map(function(i){ return document.getElementById('tv'+i); });
+  var tm = [0,1,2].map(function(i){ return document.getElementById('tm'+i); });
+
+  if (!livePrice || !zones.length) {
+    tv.forEach(function(el){ el.textContent = '—'; });
+    tm[0].textContent = livePrice ? 'No tiers selected' : 'Awaiting price feed…';
+    tm[1].textContent = ''; tm[2].textContent = '';
+    tc.forEach(function(c){ c.className = 'tray-cell'; });
+    return;
   }
 
-  // ── Decision tray ─────────────────────────────────────────────────────────
-  function updateTray(zones, side) {
-    const tc = [0, 1, 2].map(i => document.getElementById('tc' + i));
-    const tv = [0, 1, 2].map(i => document.getElementById('tv' + i));
-    const tm = [0, 1, 2].map(i => document.getElementById('tm' + i));
+  var pending = zones.filter(function(z){ return !z.isDone; });
+  pending.sort(function(a,b){ return Math.abs(a.price-livePrice) - Math.abs(b.price-livePrice); });
 
-    if (!livePrice || !zones.length) {
-      tv.forEach(el => { el.textContent = '—'; });
-      tm[0].textContent = livePrice ? 'No tiers selected' : 'Awaiting price feed…';
-      tm[1].textContent = '';
-      tm[2].textContent = '';
-      tc.forEach(c => { c.className = 'tray-cell'; });
-      return;
-    }
+  if (pending[0]) {
+    var d0 = pending[0].price - livePrice;
+    var p0 = (d0 / livePrice) * 100;
+    tc[0].className = 'tray-cell t-' + getStatus(Math.abs(p0));
+    tv[0].textContent = '$' + fmt(pending[0].price);
+    tm[0].textContent = pending[0].lev + 'x leverage · ' + (d0>0?'+':'') + p0.toFixed(2) + '%';
+  } else {
+    tc[0].className = 'tray-cell'; tv[0].textContent = 'All triggered';
+    tm[0].textContent = 'Price has passed all zones';
+  }
+  if (pending[1]) {
+    var d1 = pending[1].price - livePrice;
+    var p1 = (d1 / livePrice) * 100;
+    tc[1].className = 'tray-cell t-' + getStatus(Math.abs(p1));
+    tv[1].textContent = '$' + fmt(pending[1].price);
+    tm[1].textContent = pending[1].lev + 'x · ' + (d1>0?'+':'') + p1.toFixed(2) + '%';
+  } else {
+    tc[1].className = 'tray-cell'; tv[1].textContent = '—'; tm[1].textContent = '';
+  }
+  if (zones.length >= 2) {
+    var prices = zones.map(function(z){ return z.price; });
+    var hi = Math.max.apply(null, prices), lo = Math.min.apply(null, prices);
+    var span = ((hi - lo) / hi) * 100;
+    tc[2].className = 'tray-cell t-watch';
+    tv[2].textContent = '$' + fmt(lo) + ' – $' + fmt(hi);
+    tm[2].textContent = span.toFixed(1) + '% span across all tiers';
+  } else {
+    tc[2].className = 'tray-cell'; tv[2].textContent = '—'; tm[2].textContent = '';
+  }
+}
 
-    // pending = not yet triggered
-    const pending = zones.filter(z =>
-      side === 'long' ? livePrice > z.price : livePrice < z.price
-    );
+// ── Order Projections ──────────────────────────────────────────────────────
+function renderOrders(zones) {
+  var pending = zones.filter(function(z){ return !z.isDone; });
+  if (!pending.length) {
+    orderGrid.innerHTML = '<div class="no-orders">No pending zones — all zones have been triggered, or enter a high price and select tiers.</div>';
+    return;
+  }
 
-    // sort pending by closeness to live price
-    pending.sort((a, b) => Math.abs(a.price - livePrice) - Math.abs(b.price - livePrice));
+  // For each pending zone, compute wick-buy suggestion
+  // Entry: 0.25% inside zone (for longs: 0.25% below zone; for shorts: 0.25% above)
+  // Stop:  0.75% beyond zone in same direction (deeper than entry)
+  // TP1:   next zone (in cascade direction)
+  // TP2:   1.5× the zone-to-zone distance beyond TP1
 
-    const nearest = pending[0];
-    const second  = pending[1];
+  var html = '';
+  pending.forEach(function(z, idx) {
+    var next = pending[idx + 1]; // next zone in cascade direction
 
-    // Nearest zone
-    if (nearest) {
-      const dist    = nearest.price - livePrice;
-      const distPct = (dist / livePrice) * 100;
-      const s = getStatus(Math.abs(distPct));
-      tc[0].className = 'tray-cell t-' + s;
-      tv[0].textContent = '$' + fmt(nearest.price);
-      tm[0].textContent = nearest.lev + 'x leverage · ' + (dist > 0 ? '+' : '') + distPct.toFixed(2) + '%';
+    var entry, stop, tp1, tp2, rrRatio;
+    if (side === 'long') {
+      // Buying the wick below a long-liq zone
+      entry = z.price * (1 - 0.0025);
+      stop  = z.price * (1 - 0.0025 - 0.0075); // 0.75% below entry
+      tp1   = next ? next.price * (1 + 0.001) : z.price * (1 + 0.012); // slightly above next zone (bounce)
+      tp2   = next ? z.price + (z.price - next.price) * 1.5 : z.price * (1 + 0.025);
     } else {
-      tc[0].className = 'tray-cell';
-      tv[0].textContent = 'All zones triggered';
-      tm[0].textContent = 'Price has passed all selected zones';
+      // Buying the wick above a short-liq zone
+      entry = z.price * (1 + 0.0025);
+      stop  = z.price * (1 + 0.0025 + 0.0075);
+      tp1   = next ? next.price * (1 - 0.001) : z.price * (1 - 0.012);
+      tp2   = next ? z.price - (next.price - z.price) * 1.5 : z.price * (1 - 0.025);
     }
 
-    // Next zone
-    if (second) {
-      const dist    = second.price - livePrice;
-      const distPct = (dist / livePrice) * 100;
-      const s = getStatus(Math.abs(distPct));
-      tc[1].className = 'tray-cell t-' + s;
-      tv[1].textContent = '$' + fmt(second.price);
-      tm[1].textContent = second.lev + 'x · ' + (dist > 0 ? '+' : '') + distPct.toFixed(2) + '%';
-    } else {
-      tc[1].className = 'tray-cell';
-      tv[1].textContent = '—';
-      tm[1].textContent = pending.length <= 1 ? 'Only one zone remaining' : '';
-    }
+    var reward  = Math.abs(tp1 - entry);
+    var risk    = Math.abs(stop - entry);
+    rrRatio     = risk > 0 ? (reward / risk).toFixed(1) : '—';
 
-    // Full cascade span (all zones, triggered or not)
-    if (zones.length >= 2) {
-      const prices = zones.map(z => z.price);
-      const hi = Math.max(...prices), lo = Math.min(...prices);
-      const span = ((hi - lo) / hi) * 100;
-      tc[2].className = 'tray-cell t-watch';
-      tv[2].textContent = '$' + fmt(lo) + ' – $' + fmt(hi);
-      tm[2].textContent = span.toFixed(1) + '% span across all tiers';
-    } else {
-      tc[2].className = 'tray-cell';
-      tv[2].textContent = '—';
-      tm[2].textContent = 'Need ≥2 tiers for range';
-    }
-  }
+    var stopPct   = ((stop  - entry) / entry * 100).toFixed(2);
+    var tp1Pct    = ((tp1   - entry) / entry * 100).toFixed(2);
+    var tp2Pct    = ((tp2   - entry) / entry * 100).toFixed(2);
 
-  // ── Live price update ─────────────────────────────────────────────────────
-  function onPrice(price, source) {
-    if (!price || isNaN(price)) return;
-    prevPrice = livePrice;
-    livePrice = price;
+    var dirWord = side === 'long' ? 'BUY' : 'SELL';
+    var entryStr = dirWord + ' $' + fmt(entry);
 
-    priceEl.textContent = '$' + fmt(price);
-    priceEl.classList.remove('loading');
-    sourceEl.textContent = source;
+    html +=
+      '<div class="order-card">' +
+        '<div class="order-card-hdr">' +
+          '<span class="oc-lev">' + z.lev + 'x zone</span>' +
+          '<span class="oc-zone">$' + fmt(z.price) + '</span>' +
+        '</div>' +
+        '<div class="order-card-body">' +
+          '<div class="order-row"><span class="or-label">Limit entry</span><span class="or-val entry">' + entryStr + '</span></div>' +
+          '<div class="order-row"><span class="or-label">Stop loss</span><span class="or-val stop">$' + fmt(stop) + ' (' + stopPct + '%)</span></div>' +
+          '<div class="order-row"><span class="or-label">TP1 ' + (next ? next.lev + 'x zone' : 'bounce') + '</span><span class="or-val tp">$' + fmt(tp1) + ' (+' + Math.abs(tp1Pct).toFixed(2) + '%)</span></div>' +
+          '<div class="order-row"><span class="or-label">TP2 extension</span><span class="or-val tp">$' + fmt(tp2) + ' (+' + Math.abs(tp2Pct).toFixed(2) + '%)</span></div>' +
+          '<div class="order-row"><span class="or-label">Risk : Reward</span><span class="or-val rr">1 : ' + rrRatio + '</span></div>' +
+          '<div class="oc-copy-wrap"><button class="oc-copy" data-entry="' + entry.toFixed(2) + '" data-stop="' + stop.toFixed(2) + '" data-tp1="' + tp1.toFixed(2) + '">COPY ENTRY $' + fmt(entry) + '</button></div>' +
+        '</div>' +
+      '</div>';
+  });
 
-    if (prevPrice !== null) {
-      const diff = price - prevPrice;
-      const pct  = (diff / prevPrice) * 100;
-      if (Math.abs(pct) > 0.0002) {
-        const dir = diff > 0 ? 'up' : 'dn';
-        changeEl.className = 'price-change ' + dir;
-        changeEl.textContent = (diff > 0 ? '+' : '') + pct.toFixed(3) + '%';
-        clearTimeout(flashTimer);
-        priceEl.classList.remove('flash-up', 'flash-dn');
-        void priceEl.offsetWidth;
-        priceEl.classList.add(diff > 0 ? 'flash-up' : 'flash-dn');
-        flashTimer = setTimeout(() => priceEl.classList.remove('flash-up', 'flash-dn'), 400);
-      }
-    }
+  orderGrid.innerHTML = html;
 
-    render();
-  }
+  orderGrid.querySelectorAll('.oc-copy').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var text = 'Entry: ' + btn.dataset.entry + ' | Stop: ' + btn.dataset.stop + ' | TP1: ' + btn.dataset.tp1;
+      navigator.clipboard && navigator.clipboard.writeText(text).catch(function(){});
+      btn.textContent = 'COPIED!'; btn.classList.add('ok');
+      setTimeout(function(){ btn.textContent = 'COPY ENTRY $' + fmt(parseFloat(btn.dataset.entry)); btn.classList.remove('ok'); }, 1500);
+    });
+  });
+}
 
-  // ── WebSocket waterfall ───────────────────────────────────────────────────
-  // Port 9443 is blocked by most ISPs. Try sources in order; rotate on failure.
-  const WS_SOURCES = [
-    {
-      label: 'Binance WS',
-      url: 'wss://stream.binance.com:443/ws/btcusdt@aggTrade',
-      onmessage: d => (d.p ? parseFloat(d.p) : null),
-    },
-    {
-      label: 'Kraken WS',
-      url: 'wss://ws.kraken.com/v2',
-      subscribe: { method: 'subscribe', params: { channel: 'ticker', symbol: ['BTC/USD'] } },
-      onmessage: d => {
-        if (d.channel === 'ticker' && Array.isArray(d.data) && d.data[0]?.last)
-          return parseFloat(d.data[0].last);
-        return null;
-      },
-    },
-    {
-      label: 'Binance WS (9443)',
-      url: 'wss://stream.binance.com:9443/ws/btcusdt@aggTrade',
-      onmessage: d => (d.p ? parseFloat(d.p) : null),
-    },
-  ];
+// ── PRICE FEED ───────────────────────────────────────────────────────────
+function onPrice(price, source) {
+  if (!price || isNaN(price)) return;
+  prevPrice = livePrice;
+  livePrice = price;
 
-  let wsIdx = 0;
-  let wsConnectTimer = null;
+  priceEl.textContent = '$' + fmt(price);
+  priceEl.classList.remove('loading');
+  sourceEl.textContent = source;
 
-  function connectWS() {
-    clearTimeout(wsConnectTimer);
-    try { if (ws) ws.close(); } catch (_) {}
-
-    const src = WS_SOURCES[wsIdx % WS_SOURCES.length];
-    sourceEl.textContent = 'trying ' + src.label + '…';
-
-    ws = new WebSocket(src.url);
-    wsAlive = false;
-
-    // If no open event within 6 s, move to next source
-    const timeout = setTimeout(() => {
-      if (!wsAlive) { wsIdx++; try { ws.close(); } catch (_) {} }
-    }, 6000);
-
-    ws.onopen = () => {
-      clearTimeout(timeout);
-      wsAlive = true;
-      wsDot.className = 'ws-dot live';
-      sourceEl.textContent = src.label + ' · live';
-      if (src.subscribe) ws.send(JSON.stringify(src.subscribe));
-    };
-
-    ws.onmessage = e => {
-      try {
-        const d = JSON.parse(e.data);
-        const p = src.onmessage(d);
-        if (p && !isNaN(p)) onPrice(p, src.label + ' · live');
-      } catch (_) {}
-    };
-
-    ws.onclose = () => {
-      clearTimeout(timeout);
-      wsAlive = false;
-      wsDot.className = 'ws-dot err';
-      // Rotate to next source after brief pause
-      wsConnectTimer = setTimeout(() => { wsIdx++; connectWS(); }, 3000);
-    };
-
-    ws.onerror = () => { try { ws.close(); } catch (_) {} };
-  }
-
-  // ── REST fallback (polls every 10 s when WS is down) ─────────────────────
-  async function fetchREST() {
-    if (wsAlive) return;
-    const sources = [
-      {
-        url: 'https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT',
-        parse: d => parseFloat(d.price),
-        label: 'Binance REST · ~10 s',
-      },
-      {
-        url: 'https://api.coinbase.com/v2/prices/BTC-USD/spot',
-        parse: d => parseFloat(d?.data?.amount),
-        label: 'Coinbase REST · ~10 s',
-      },
-      {
-        url: 'https://api.kraken.com/0/public/Ticker?pair=XBTUSD',
-        parse: d => parseFloat(d?.result?.XXBTZUSD?.c?.[0]),
-        label: 'Kraken REST · ~10 s',
-      },
-    ];
-    for (const src of sources) {
-      try {
-        const ctrl = new AbortController();
-        const tid  = setTimeout(() => ctrl.abort(), 5000);
-        const res  = await fetch(src.url, { signal: ctrl.signal });
-        clearTimeout(tid);
-        const data = await res.json();
-        const p = src.parse(data);
-        if (p && !isNaN(p)) {
-          wsDot.className = 'ws-dot';
-          onPrice(p, src.label);
-          return;
-        }
-      } catch (_) {}
-    }
-    wsDot.className = 'ws-dot err';
-    if (!livePrice) {
-      priceEl.textContent = 'unavailable';
-      sourceEl.textContent = 'all feeds failed';
+  if (prevPrice !== null) {
+    var diff = price - prevPrice;
+    var pct  = (diff / prevPrice) * 100;
+    if (Math.abs(pct) > 0.0001) {
+      changeEl.className = 'price-change ' + (diff > 0 ? 'up' : 'dn');
+      changeEl.textContent = (diff > 0 ? '+' : '') + pct.toFixed(3) + '%';
+      clearTimeout(flashTimer);
+      priceEl.classList.remove('flash-up','flash-dn');
+      void priceEl.offsetWidth;
+      priceEl.classList.add(diff > 0 ? 'flash-up' : 'flash-dn');
+      flashTimer = setTimeout(function(){ priceEl.classList.remove('flash-up','flash-dn'); }, 350);
     }
   }
 
-  // ── Boot ──────────────────────────────────────────────────────────────────
-  connectWS();
-  fetchREST();
-  setInterval(fetchREST, 10000);
+  updateCurrentCandle(price);
   render();
+}
+
+// ── WebSocket waterfall ────────────────────────────────────────────────────
+var WS_SOURCES = [
+  {
+    label: 'Binance WS',
+    url: 'wss://stream.binance.com:443/ws/btcusdt@aggTrade',
+    onmsg: function(d){ return d.p ? parseFloat(d.p) : null; },
+    sub: null,
+  },
+  {
+    label: 'Kraken WS',
+    url: 'wss://ws.kraken.com/v2',
+    onmsg: function(d){
+      if (d.channel === 'ticker' && Array.isArray(d.data) && d.data[0] && d.data[0].last)
+        return parseFloat(d.data[0].last);
+      return null;
+    },
+    sub: { method:'subscribe', params:{ channel:'ticker', symbol:['BTC/USD'] } },
+  },
+  {
+    label: 'Binance WS (9443)',
+    url: 'wss://stream.binance.com:9443/ws/btcusdt@aggTrade',
+    onmsg: function(d){ return d.p ? parseFloat(d.p) : null; },
+    sub: null,
+  },
+];
+
+function connectWS() {
+  clearTimeout(wsTimer);
+  try { if (ws) ws.close(); } catch(_){}
+  var src = WS_SOURCES[wsIdx % WS_SOURCES.length];
+  sourceEl.textContent = 'trying ' + src.label + '…';
+  ws = new WebSocket(src.url);
+  wsAlive = false;
+  var timeout = setTimeout(function(){ if (!wsAlive){ wsIdx++; try{ ws.close(); }catch(_){} } }, 6000);
+  ws.onopen = function(){
+    clearTimeout(timeout); wsAlive = true;
+    wsDot.className = 'ws-dot live';
+    sourceEl.textContent = src.label + ' · live';
+    if (src.sub) ws.send(JSON.stringify(src.sub));
+  };
+  ws.onmessage = function(e){
+    try{ var d = JSON.parse(e.data); var p = src.onmsg(d); if (p && !isNaN(p)) onPrice(p, src.label + ' · live'); }catch(_){}
+  };
+  ws.onclose = function(){
+    clearTimeout(timeout); wsAlive = false;
+    wsDot.className = 'ws-dot err';
+    wsTimer = setTimeout(function(){ wsIdx++; connectWS(); }, 3000);
+  };
+  ws.onerror = function(){ try{ ws.close(); }catch(_){} };
+}
+
+async function fetchREST() {
+  if (wsAlive) return;
+  var sources = [
+    { url:'https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT', parse:function(d){ return parseFloat(d.price); }, label:'Binance REST' },
+    { url:'https://api.coinbase.com/v2/prices/BTC-USD/spot',            parse:function(d){ return parseFloat(d && d.data && d.data.amount); }, label:'Coinbase REST' },
+    { url:'https://api.kraken.com/0/public/Ticker?pair=XBTUSD',         parse:function(d){ return d && d.result && d.result.XXBTZUSD && parseFloat(d.result.XXBTZUSD.c[0]); }, label:'Kraken REST' },
+  ];
+  for (var i = 0; i < sources.length; i++) {
+    var src = sources[i];
+    try {
+      var ctrl = new AbortController();
+      var tid  = setTimeout(function(){ ctrl.abort(); }, 5000);
+      var res  = await fetch(src.url, { signal: ctrl.signal });
+      clearTimeout(tid);
+      var data = await res.json();
+      var p = src.parse(data);
+      if (p && !isNaN(p)) {
+        if (!wsAlive) wsDot.className = 'ws-dot';
+        onPrice(p, src.label + ' · ~10s');
+        return;
+      }
+    } catch(_) {}
+  }
+  if (!livePrice) {
+    wsDot.className = 'ws-dot err';
+    priceEl.textContent = 'unavailable';
+    sourceEl.textContent = 'all feeds failed';
+  }
+}
+
+// ── CHART ─────────────────────────────────────────────────────────────────
+function initChart() {
+  if (!window.LightweightCharts) return;
+  var container = document.getElementById('chartDiv');
+  chart = LightweightCharts.createChart(container, {
+    layout: {
+      background: { color: '#13151A' },
+      textColor: '#8B8F98',
+    },
+    grid: {
+      vertLines: { color: '#1B1E24' },
+      horzLines: { color: '#1B1E24' },
+    },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    rightPriceScale: { borderColor: '#23262E' },
+    timeScale: { borderColor: '#23262E', timeVisible: true, secondsVisible: false },
+    handleScroll: true,
+    handleScale: true,
+  });
+
+  candleSeries = chart.addCandlestickSeries({
+    upColor:        '#3DDC84',
+    downColor:      '#FF5C5C',
+    borderUpColor:  '#3DDC84',
+    borderDownColor:'#FF5C5C',
+    wickUpColor:    '#3DDC84',
+    wickDownColor:  '#FF5C5C',
+  });
+
+  // Resize observer
+  var ro = new ResizeObserver(function(entries) {
+    var entry = entries[0];
+    if (entry && chart) {
+      chart.applyOptions({ width: entry.contentRect.width, height: entry.contentRect.height });
+    }
+  });
+  ro.observe(container);
+
+  loadCandles();
+}
+
+async function loadCandles() {
+  if (!candleSeries) return;
+  var ivMap = { 300:'5m', 900:'15m', 3600:'1h' };
+  var ivStr = ivMap[currentIvSecs] || '15m';
+  try {
+    var ctrl = new AbortController();
+    var tid = setTimeout(function(){ ctrl.abort(); }, 8000);
+    var res  = await fetch('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=' + ivStr + '&limit=300', { signal: ctrl.signal });
+    clearTimeout(tid);
+    var data = await res.json();
+    if (!Array.isArray(data)) return;
+    var candles = data.map(function(k) {
+      return { time: Math.floor(k[0] / 1000), open: parseFloat(k[1]), high: parseFloat(k[2]), low: parseFloat(k[3]), close: parseFloat(k[4]) };
+    });
+    candleSeries.setData(candles);
+    if (candles.length) currentCandle = candles[candles.length - 1];
+    liqMarkers = []; // reset markers on reload
+    candleSeries.setMarkers([]);
+    updateChartLines(lastZones);
+  } catch(_) {}
+}
+
+function updateCurrentCandle(price) {
+  if (!candleSeries) return;
+  var now = Math.floor(Date.now() / 1000);
+  var t   = now - (now % currentIvSecs);
+  if (currentCandle && currentCandle.time === t) {
+    currentCandle.close = price;
+    if (price > currentCandle.high) currentCandle.high = price;
+    if (price < currentCandle.low)  currentCandle.low  = price;
+  } else {
+    currentCandle = { time: t, open: price, high: price, low: price, close: price };
+  }
+  try { candleSeries.update(currentCandle); } catch(_) {}
+}
+
+function updateChartLines(zones) {
+  if (!candleSeries) return;
+  // Remove old lines
+  priceLines.forEach(function(pl){ try { candleSeries.removePriceLine(pl); } catch(_){} });
+  priceLines = [];
+
+  var colorMap = { danger:'#FF3B3B', warn:'#FFB020', watch:'#60B4FF', safe:'#3A3D46', done:'#2A2D34' };
+
+  zones.forEach(function(z) {
+    var color = colorMap[z.status] || '#3A3D46';
+    try {
+      var pl = candleSeries.createPriceLine({
+        price: z.price,
+        color: color,
+        lineWidth: z.status === 'danger' ? 2 : 1,
+        lineStyle: LightweightCharts.LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: z.lev + 'x' + (z.isDone ? ' ✓' : ''),
+      });
+      priceLines.push(pl);
+    } catch(_) {}
+
+    if (z.price2 !== null) {
+      try {
+        var pl2 = candleSeries.createPriceLine({
+          price: z.price2,
+          color: '#3A3D46',
+          lineWidth: 1,
+          lineStyle: LightweightCharts.LineStyle.Dotted,
+          axisLabelVisible: true,
+          title: z.lev + 'x H2',
+        });
+        priceLines.push(pl2);
+      } catch(_) {}
+    }
+  });
+}
+
+// ── LIQ EVENTS ───────────────────────────────────────────────────────────
+var liqEvents = [];
+
+function addLiqEvent(ev) {
+  liqEvents.unshift(ev);
+  if (liqEvents.length > 300) liqEvents.pop();
+  renderFeed();
+  updateFeedStats();
+  if (ev.usdValue >= 5000 && candleSeries) addLiqChartMarker(ev);
+}
+
+function addLiqChartMarker(ev) {
+  if (!candleSeries) return;
+  var now = Math.floor(ev.time / 1000);
+  var t   = now - (now % currentIvSecs);
+  var size = Math.min(Math.ceil(ev.usdValue / 200000) + 1, 4);
+  liqMarkers.push({
+    time:     t,
+    position: ev.isLong ? 'belowBar' : 'aboveBar',
+    color:    ev.isLong ? '#FF5C5C' : '#3DDC84',
+    shape:    ev.isLong ? 'arrowDown' : 'arrowUp',
+    text:     fmtUsd(ev.usdValue),
+    size:     size,
+  });
+  // Must be sorted by time
+  liqMarkers.sort(function(a,b){ return a.time - b.time; });
+  if (liqMarkers.length > 120) liqMarkers = liqMarkers.slice(-120);
+  try { candleSeries.setMarkers(liqMarkers); } catch(_) {}
+}
+
+function renderFeed() {
+  var list = document.getElementById('feedList');
+  if (!liqEvents.length) {
+    list.innerHTML = '<div class="feed-empty">No events yet…</div>';
+    return;
+  }
+  var rows = liqEvents.slice(0, 30).map(function(ev) {
+    var d = new Date(ev.time);
+    var t = d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0') + ':' + d.getSeconds().toString().padStart(2,'0');
+    var type = ev.isLong ? 'LONG LIQ' : 'SHORT LIQ';
+    var cls  = ev.isLong ? 'fi-long' : 'fi-short';
+    return '<div class="feed-item ' + cls + '"><span class="fi-time">' + t + '</span><span class="fi-type">' + type + '</span><span class="fi-usd">' + fmtUsd(ev.usdValue) + '</span></div>';
+  });
+  list.innerHTML = rows.join('');
+}
+
+function updateFeedStats() {
+  var now = Date.now();
+  var recent = liqEvents.filter(function(e){ return now - e.time < 60000; });
+  var lv = recent.filter(function(e){ return e.isLong;  }).reduce(function(s,e){ return s+e.usdValue; }, 0);
+  var sv = recent.filter(function(e){ return !e.isLong; }).reduce(function(s,e){ return s+e.usdValue; }, 0);
+  document.getElementById('svLong').textContent  = fmtUsd(lv);
+  document.getElementById('svShort').textContent = fmtUsd(sv);
+  document.getElementById('svCount').textContent  = recent.length;
+}
+setInterval(updateFeedStats, 5000);
+
+// ── Bybit Liquidation WebSocket ───────────────────────────────────────────
+var liqWs = null;
+
+function connectLiqWS() {
+  try { if (liqWs) liqWs.close(); } catch(_) {}
+  liqWs = new WebSocket('wss://stream.bybit.com/v5/public/linear');
+  var feedDot = document.getElementById('feedDot');
+
+  liqWs.onopen = function() {
+    feedDot.className = 'feed-dot live';
+    liqWs.send(JSON.stringify({ op:'subscribe', args:['liquidation.BTCUSDT'] }));
+  };
+
+  liqWs.onmessage = function(e) {
+    try {
+      var d = JSON.parse(e.data);
+      if (d.topic === 'liquidation.BTCUSDT' && d.data) {
+        var ev = d.data;
+        var price    = parseFloat(ev.price);
+        var size     = parseFloat(ev.size);
+        var usdValue = price * size;
+        // side:"Sell" = long was liquidated (forced to sell); "Buy" = short liq
+        var isLong   = ev.side === 'Sell';
+        addLiqEvent({ time: d.ts || Date.now(), price, size, usdValue, isLong });
+      }
+    } catch(_) {}
+  };
+
+  liqWs.onclose = function() {
+    feedDot.className = 'feed-dot';
+    setTimeout(connectLiqWS, 4000);
+  };
+
+  liqWs.onerror = function() { try { liqWs.close(); } catch(_) {} };
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────
+connectWS();
+fetchREST();
+setInterval(fetchREST, 10000);
+connectLiqWS();
+initChart();
+render();
+
 })();
 </script>
-
 </body>
 </html>
