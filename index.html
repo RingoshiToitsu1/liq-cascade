@@ -168,24 +168,25 @@ h1.display { font-size:21px; font-weight:800; letter-spacing:-.02em; }
 .feed-empty { padding:18px 14px; font-size:11px; color:var(--text-faint); }
 
 .feed-item {
-  display:grid; grid-template-columns:42px 1fr 1fr;
-  gap:4px; align-items:center;
-  padding:6px 12px; border-bottom:1px solid var(--hairline-soft);
-  font-size:10.5px;
+  display:grid; grid-template-columns:38px 1fr 70px 48px;
+  gap:3px; align-items:center;
+  padding:5px 12px; border-bottom:1px solid var(--hairline-soft);
+  font-size:10px; cursor:default;
 }
 .feed-item:last-child { border-bottom:none; }
-.fi-time { color:var(--text-faint); font-size:9.5px; }
-.fi-type { font-size:9px; font-weight:700; letter-spacing:.06em; padding:2px 5px; border-radius:3px; text-align:center; }
+.fi-time  { color:var(--text-faint); font-size:9px; }
+.fi-type  { font-size:8.5px; font-weight:700; letter-spacing:.05em; padding:2px 4px; border-radius:3px; text-align:center; }
 .fi-long  .fi-type { background:rgba(255,92,92,.12);  color:var(--bear); }
 .fi-short .fi-type { background:rgba(61,220,132,.12); color:var(--bull); }
-.fi-usd { font-weight:600; text-align:right; }
-.fi-long  .fi-usd { color:var(--bear); }
-.fi-short .fi-usd { color:var(--bull); }
-.fi-price { color:var(--text-dim); text-align:right; font-size:10px; }
+.fi-price { color:var(--text-dim); font-size:10px; font-weight:600; text-align:right; }
+.fi-usd   { color:var(--text-faint); font-size:9px; text-align:right; }
+.fi-long  .fi-usd { color:rgba(255,92,92,.7); }
+.fi-short .fi-usd { color:rgba(61,220,132,.7); }
+.fi-lev   { font-size:8.5px; color:var(--amber); font-weight:600; }
 
 /* ── CONTROLS ── */
 .controls {
-  display:grid; grid-template-columns:repeat(4,1fr);
+  display:grid; grid-template-columns:repeat(3,1fr);
   gap:1px; background:var(--hairline);
   border:1px solid var(--hairline); border-radius:8px;
   overflow:hidden; margin-bottom:20px;
@@ -504,24 +505,15 @@ input:focus,button:focus,.tier-chip:focus,.side-btn:focus,.ex-btn:focus,.iv-btn:
       <button class="side-btn active long" id="sideLong">LONGS</button>
       <button class="side-btn short" id="sideShort">SHORTS</button>
     </div>
+    <div class="margin-row" style="margin-top:9px;">
+      <label>Maint %</label>
+      <input type="number" id="maintMargin" value="0.50" step="0.05" min="0" max="5">
+      <label>Fee %</label>
+      <input type="number" id="feeBuffer"   value="0.05" step="0.01" min="0" max="2">
+    </div>
     <div class="suggested-highs" id="suggestedHighs">
       <div class="sh-label">Detected rejections</div>
       <div class="sh-chips"><span class="sh-loading">loading chart…</span></div>
-    </div>
-  </div>
-  <div class="field">
-    <label>Exchange preset</label>
-    <div class="ex-row" id="exRow">
-      <button class="ex-btn active" data-maint="0.40" data-fee="0.05">BINANCE</button>
-      <button class="ex-btn"        data-maint="0.50" data-fee="0.055">BYBIT</button>
-      <button class="ex-btn"        data-maint="0.50" data-fee="0.05">OKX</button>
-      <button class="ex-btn"        data-maint="0.50" data-fee="0.045">HYPER</button>
-    </div>
-    <div class="margin-row">
-      <label>Maint %</label>
-      <input type="number" id="maintMargin" value="0.40" step="0.05" min="0" max="5">
-      <label>Fee %</label>
-      <input type="number" id="feeBuffer"   value="0.05" step="0.01" min="0" max="2">
     </div>
   </div>
   <div class="field">
@@ -667,17 +659,6 @@ function activeTiers() {
     .map(function(c){ return +c.dataset.lev; })
     .sort(function(a,b){ return a-b; });
 }
-
-// ── Exchange presets ──────────────────────────────────────────────────────
-document.querySelectorAll('.ex-btn').forEach(function(btn) {
-  btn.addEventListener('click', function() {
-    document.querySelectorAll('.ex-btn').forEach(function(b){ b.classList.remove('active'); });
-    btn.classList.add('active');
-    maintInput.value = btn.dataset.maint;
-    feeInput.value   = btn.dataset.fee;
-    render();
-  });
-});
 
 // ── Interval buttons ──────────────────────────────────────────────────────
 document.querySelectorAll('.iv-btn').forEach(function(btn) {
@@ -1008,53 +989,39 @@ function onPrice(price, source) {
   render();
 }
 
-// ── WebSocket waterfall ────────────────────────────────────────────────────
-var WS_SOURCES = [
-  {
-    label: 'Binance WS',
-    url: 'wss://stream.binance.com:443/ws/btcusdt@aggTrade',
-    onmsg: function(d){ return d.p ? parseFloat(d.p) : null; },
-    sub: null,
-  },
-  {
-    label: 'Kraken WS',
-    url: 'wss://ws.kraken.com/v2',
-    onmsg: function(d){
-      if (d.channel === 'ticker' && Array.isArray(d.data) && d.data[0] && d.data[0].last)
-        return parseFloat(d.data[0].last);
-      return null;
-    },
-    sub: { method:'subscribe', params:{ channel:'ticker', symbol:['BTC/USD'] } },
-  },
-  {
-    label: 'Binance WS (9443)',
-    url: 'wss://stream.binance.com:9443/ws/btcusdt@aggTrade',
-    onmsg: function(d){ return d.p ? parseFloat(d.p) : null; },
-    sub: null,
-  },
-];
+// ── OKX Price WebSocket ───────────────────────────────────────────────────
+var wsUrls = ['wss://ws.okx.com:8443/ws/v5/public', 'wss://wsaws.okx.com:8443/ws/v5/public'];
+var wsUrlIdx = 0;
 
 function connectWS() {
   clearTimeout(wsTimer);
   try { if (ws) ws.close(); } catch(_){}
-  var src = WS_SOURCES[wsIdx % WS_SOURCES.length];
-  sourceEl.textContent = 'trying ' + src.label + '…';
-  ws = new WebSocket(src.url);
+  var url = wsUrls[wsUrlIdx % wsUrls.length];
+  sourceEl.textContent = 'trying OKX…';
+  ws = new WebSocket(url);
   wsAlive = false;
-  var timeout = setTimeout(function(){ if (!wsAlive){ wsIdx++; try{ ws.close(); }catch(_){} } }, 6000);
+  var pingId = null;
+  var timeout = setTimeout(function(){ if (!wsAlive){ wsUrlIdx++; try{ ws.close(); }catch(_){} } }, 7000);
   ws.onopen = function(){
     clearTimeout(timeout); wsAlive = true;
     wsDot.className = 'ws-dot live';
-    sourceEl.textContent = src.label + ' · live';
-    if (src.sub) ws.send(JSON.stringify(src.sub));
+    sourceEl.textContent = 'OKX · live';
+    ws.send(JSON.stringify({ op:'subscribe', args:[{ channel:'trades', instId:'BTC-USDT-SWAP' }] }));
+    pingId = setInterval(function(){ if (ws.readyState === 1) ws.send('ping'); }, 25000);
   };
   ws.onmessage = function(e){
-    try{ var d = JSON.parse(e.data); var p = src.onmsg(d); if (p && !isNaN(p)) onPrice(p, src.label + ' · live'); }catch(_){}
+    if (e.data === 'pong') return;
+    try{
+      var d = JSON.parse(e.data);
+      if (d.data && Array.isArray(d.data) && d.data[0] && d.data[0].px) {
+        onPrice(parseFloat(d.data[0].px), 'OKX · live');
+      }
+    }catch(_){}
   };
   ws.onclose = function(){
-    clearTimeout(timeout); wsAlive = false;
-    wsDot.className = 'ws-dot err';
-    wsTimer = setTimeout(function(){ wsIdx++; connectWS(); }, 3000);
+    clearTimeout(timeout); clearInterval(pingId);
+    wsAlive = false; wsDot.className = 'ws-dot err';
+    wsTimer = setTimeout(function(){ wsUrlIdx++; connectWS(); }, 3000);
   };
   ws.onerror = function(){ try{ ws.close(); }catch(_){} };
 }
@@ -1062,9 +1029,8 @@ function connectWS() {
 async function fetchREST() {
   if (wsAlive) return;
   var sources = [
-    { url:'https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT', parse:function(d){ return parseFloat(d.price); }, label:'Binance REST' },
-    { url:'https://api.coinbase.com/v2/prices/BTC-USD/spot',            parse:function(d){ return parseFloat(d && d.data && d.data.amount); }, label:'Coinbase REST' },
-    { url:'https://api.kraken.com/0/public/Ticker?pair=XBTUSD',         parse:function(d){ return d && d.result && d.result.XXBTZUSD && parseFloat(d.result.XXBTZUSD.c[0]); }, label:'Kraken REST' },
+    { url:'https://www.okx.com/api/v5/market/ticker?instId=BTC-USDT-SWAP', parse:function(d){ return d.data && d.data[0] && parseFloat(d.data[0].last); }, label:'OKX REST' },
+    { url:'https://api.kraken.com/0/public/Ticker?pair=XBTUSD', parse:function(d){ return d && d.result && d.result.XXBTZUSD && parseFloat(d.result.XXBTZUSD.c[0]); }, label:'Kraken REST' },
   ];
   for (var i = 0; i < sources.length; i++) {
     var src = sources[i];
@@ -1564,18 +1530,38 @@ function addLiqChartMarker(ev) {
   applyAllMarkers();
 }
 
+// Back-calculate estimated leverage from liq price vs current entry
+function estimateLev(liqPrice, isLong) {
+  var entry = parseFloat(highInput.value);
+  var maint = parseFloat(maintInput.value) || 0;
+  var fee   = parseFloat(feeInput.value)   || 0;
+  if (!entry || !liqPrice || entry <= 0) return null;
+  var cushion = isLong ? (entry - liqPrice) / entry : (liqPrice - entry) / entry;
+  var net = cushion - (maint / 100) - (fee / 100);
+  if (net <= 0) return null;
+  var lev = Math.round(1 / net);
+  return (lev >= 2 && lev <= 200) ? lev : null;
+}
+
 function renderFeed() {
   var list = document.getElementById('feedList');
   if (!liqEvents.length) {
     list.innerHTML = '<div class="feed-empty">No events yet…</div>';
     return;
   }
-  var rows = liqEvents.slice(0, 30).map(function(ev) {
-    var d = new Date(ev.time);
-    var t = d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0') + ':' + d.getSeconds().toString().padStart(2,'0');
-    var type = ev.isLong ? 'LONG LIQ' : 'SHORT LIQ';
-    var cls  = ev.isLong ? 'fi-long' : 'fi-short';
-    return '<div class="feed-item ' + cls + '"><span class="fi-time">' + t + '</span><span class="fi-type">' + type + '</span><span class="fi-usd">' + fmtUsd(ev.usdValue) + '</span></div>';
+  var rows = liqEvents.slice(0, 40).map(function(ev) {
+    var d   = new Date(ev.time);
+    var t   = d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0') + ':' + d.getSeconds().toString().padStart(2,'0');
+    var cls = ev.isLong ? 'fi-long' : 'fi-short';
+    var lev = estimateLev(ev.price, ev.isLong);
+    var levTag = lev ? ' <span class="fi-lev">~' + lev + 'x</span>' : '';
+    var type = (ev.isLong ? 'LONG' : 'SHORT') + ' LIQ';
+    return '<div class="feed-item ' + cls + '" title="Liq @ $' + fmt(ev.price) + (lev ? ' · est. ' + lev + 'x leverage' : '') + '">' +
+      '<span class="fi-time">' + t + '</span>' +
+      '<span class="fi-type">' + type + levTag + '</span>' +
+      '<span class="fi-price">$' + fmt(ev.price) + '</span>' +
+      '<span class="fi-usd">' + fmtUsd(ev.usdValue) + '</span>' +
+      '</div>';
   });
   list.innerHTML = rows.join('');
 }
