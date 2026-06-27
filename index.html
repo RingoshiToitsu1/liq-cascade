@@ -1363,10 +1363,37 @@ async function loadCandles() {
 
   var binanceIv = { 60:'1m', 300:'5m', 900:'15m', 3600:'1h' }[currentIvSecs] || '15m';
   var bybitIv   = { 60:'1',  300:'5',  900:'15',  3600:'60'  }[currentIvSecs] || '15';
+  var okxIv     = { 60:'1m', 300:'5m', 900:'15m', 3600:'1H'  }[currentIvSecs] || '15m';
   var krakenIv  = { 60:1,    300:5,    900:15,    3600:60    }[currentIvSecs] || 15;
 
   var SOURCES = [
     {
+      // OKX perp — most globally accessible, no geo-block, CORS-friendly
+      name: 'OKX Perp',
+      url:  'https://www.okx.com/api/v5/market/candles?instId=BTC-USDT-SWAP&bar=' + okxIv + '&limit=300',
+      parse: function(d) {
+        var data = d && d.data;
+        if (!Array.isArray(data) || !data.length) return null;
+        // OKX returns newest-first — reverse
+        return data.slice().reverse().map(function(k) {
+          return { time:Math.floor(+k[0]/1000), open:+k[1], high:+k[2], low:+k[3], close:+k[4] };
+        });
+      },
+    },
+    {
+      // Bybit linear perp
+      name: 'Bybit Perp',
+      url:  'https://api.bybit.com/v5/market/kline?category=linear&symbol=BTCUSDT&interval=' + bybitIv + '&limit=300',
+      parse: function(d) {
+        var list = d && d.result && d.result.list;
+        if (!Array.isArray(list) || !list.length) return null;
+        return list.slice().reverse().map(function(k) {
+          return { time:Math.floor(+k[0]/1000), open:+k[1], high:+k[2], low:+k[3], close:+k[4] };
+        });
+      },
+    },
+    {
+      // Binance perpetual futures
       name: 'Binance Perp',
       url:  'https://fapi.binance.com/fapi/v1/klines?symbol=BTCUSDT&interval=' + binanceIv + '&limit=300',
       parse: function(d) {
@@ -1377,19 +1404,8 @@ async function loadCandles() {
       },
     },
     {
-      name: 'Bybit',
-      url:  'https://api.bybit.com/v5/market/kline?category=linear&symbol=BTCUSDT&interval=' + bybitIv + '&limit=300',
-      parse: function(d) {
-        var list = d && d.result && d.result.list;
-        if (!Array.isArray(list) || !list.length) return null;
-        // Bybit returns newest-first — reverse it
-        return list.slice().reverse().map(function(k) {
-          return { time:Math.floor(+k[0]/1000), open:+k[1], high:+k[2], low:+k[3], close:+k[4] };
-        });
-      },
-    },
-    {
-      name: 'Kraken',
+      // Kraken spot — last resort, no liquidation wicks but always works
+      name: 'Kraken Spot ⚠',
       url:  'https://api.kraken.com/0/public/OHLC?pair=XBTUSD&interval=' + krakenIv,
       parse: function(d) {
         var rows = d && d.result && d.result.XXBTZUSD;
