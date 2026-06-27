@@ -122,15 +122,6 @@ h1.display { font-size:21px; font-weight:800; letter-spacing:-.02em; }
 }
 .iv-btn.active { background:rgba(96,180,255,.1); border-color:var(--watch); color:var(--watch); }
 #chartDiv { flex:1; min-height:360px; position:relative; }
-#tvChart   { flex:1; min-height:380px; display:none; }
-.cm-btns { display:flex; gap:4px; }
-.cm-btn {
-  background:var(--panel-raised); border:1px solid var(--hairline);
-  color:var(--text-faint); font-family:'IBM Plex Mono',monospace;
-  font-size:9px; font-weight:700; padding:3px 8px; border-radius:4px;
-  cursor:pointer; transition:all .12s; letter-spacing:.04em;
-}
-.cm-btn.active { background:rgba(61,220,132,.1); border-color:var(--bull); color:var(--bull); }
 .chart-status {
   display:none; position:absolute; inset:0; z-index:10;
   align-items:center; justify-content:center; flex-direction:column; gap:8px;
@@ -461,20 +452,13 @@ input:focus,button:focus,.tier-chip:focus,.side-btn:focus,.ex-btn:focus,.iv-btn:
   <div class="chart-wrap">
     <div class="chart-toolbar">
       <span class="ct-label" id="chartLabel">BTC/USDT · 15m — liq zones overlaid</span>
-      <div style="display:flex;gap:10px;align-items:center;">
-        <div class="cm-btns">
-          <button class="cm-btn active" data-mode="zones">ZONES</button>
-          <button class="cm-btn" data-mode="tv">TV PERP</button>
-        </div>
-        <div class="iv-btns" id="ivBtns">
-          <button class="iv-btn" data-iv="1m"  data-secs="60">1m</button>
-          <button class="iv-btn" data-iv="5m"  data-secs="300">5m</button>
-          <button class="iv-btn active" data-iv="15m" data-secs="900">15m</button>
-          <button class="iv-btn" data-iv="1h"  data-secs="3600">1h</button>
-        </div>
+      <div class="iv-btns">
+        <button class="iv-btn" data-iv="1m"  data-secs="60">1m</button>
+        <button class="iv-btn" data-iv="5m"  data-secs="300">5m</button>
+        <button class="iv-btn active" data-iv="15m" data-secs="900">15m</button>
+        <button class="iv-btn" data-iv="1h"  data-secs="3600">1h</button>
       </div>
     </div>
-    <div id="tvChart"></div>
     <div id="chartDiv">
       <div class="chart-status" id="chartStatus">
         <div class="cs-spin" id="csSpinner"></div>
@@ -682,44 +666,6 @@ function activeTiers() {
     .filter(function(c){ return c.classList.contains('active'); })
     .map(function(c){ return +c.dataset.lev; })
     .sort(function(a,b){ return a-b; });
-}
-
-// ── Chart mode toggle (ZONES ↔ TV PERP) ──────────────────────────────────
-var tvLoaded = false;
-document.querySelectorAll('.cm-btn').forEach(function(btn) {
-  btn.addEventListener('click', function() {
-    document.querySelectorAll('.cm-btn').forEach(function(b){ b.classList.remove('active'); });
-    btn.classList.add('active');
-    var isTV = btn.dataset.mode === 'tv';
-    document.getElementById('chartDiv').style.display = isTV ? 'none' : 'block';
-    document.getElementById('tvChart').style.display  = isTV ? 'block' : 'none';
-    document.getElementById('ivBtns').style.display   = isTV ? 'none' : 'flex';
-    if (isTV) loadTVWidget();
-  });
-});
-
-function loadTVWidget() {
-  if (tvLoaded) return;
-  tvLoaded = true;
-  var s = document.createElement('script');
-  s.src = 'https://s3.tradingview.com/tv.js';
-  s.onload = function() {
-    new TradingView.widget({
-      autosize: true,
-      symbol: 'BINANCE:BTCUSDT.P',
-      interval: '1',
-      timezone: 'Etc/UTC',
-      theme: 'dark',
-      style: '1',
-      locale: 'en',
-      enable_publishing: false,
-      allow_symbol_change: false,
-      save_image: false,
-      hide_top_toolbar: false,
-      container_id: 'tvChart',
-    });
-  };
-  document.head.appendChild(s);
 }
 
 // ── Exchange presets ──────────────────────────────────────────────────────
