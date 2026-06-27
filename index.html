@@ -436,6 +436,7 @@ input:focus,button:focus,.tier-chip:focus,.side-btn:focus,.ex-btn:focus,.iv-btn:
     <div class="chart-toolbar">
       <span class="ct-label" id="chartLabel">BTC/USDT · 15m — liq zones overlaid</span>
       <div class="iv-btns">
+        <button class="iv-btn" data-iv="1m"  data-secs="60">1m</button>
         <button class="iv-btn" data-iv="5m"  data-secs="300">5m</button>
         <button class="iv-btn active" data-iv="15m" data-secs="900">15m</button>
         <button class="iv-btn" data-iv="1h"  data-secs="3600">1h</button>
@@ -1202,7 +1203,7 @@ function initChart() {
 
 async function loadCandles() {
   if (!candleSeries) return;
-  var ivMap = { 300:'5m', 900:'15m', 3600:'1h' };
+  var ivMap = { 60:'1m', 300:'5m', 900:'15m', 3600:'1h' };
   var ivStr = ivMap[currentIvSecs] || '15m';
   try {
     var ctrl = new AbortController();
