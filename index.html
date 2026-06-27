@@ -345,6 +345,23 @@ h1.display { font-size:21px; font-weight:800; letter-spacing:-.02em; }
 .oc-copy.ok    { background:rgba(61,220,132,.1); border-color:rgba(61,220,132,.3); color:var(--bull); }
 .no-orders { padding:16px 18px; font-size:11.5px; color:var(--text-faint); }
 
+/* ── SWING HIGH SUGGESTIONS ── */
+.suggested-highs { margin-top:9px; }
+.sh-label { font-size:9px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.1em; margin-bottom:5px; }
+.sh-chips { display:flex; flex-wrap:wrap; gap:4px; }
+.sh-chip {
+  background:var(--panel-raised); border:1px solid var(--hairline);
+  color:var(--text-dim); font-family:'IBM Plex Mono',monospace;
+  font-size:9.5px; font-weight:600; padding:4px 8px; border-radius:4px;
+  cursor:pointer; transition:all .12s; white-space:nowrap; text-align:left;
+}
+.sh-chip:hover { border-color:rgba(155,109,255,.5); color:#C4AAFF; }
+.sh-chip.active { background:rgba(155,109,255,.1); border-color:rgba(155,109,255,.6); color:#C4AAFF; }
+.sh-drop { color:var(--bear); }
+.sh-wick { color:var(--amber); margin-left:3px; font-size:8.5px; }
+.sh-chip.active .sh-drop { color:#FF8080; }
+.sh-loading { font-size:9.5px; color:var(--text-faint); }
+
 /* ── FORMULA ── */
 .formula {
   padding:13px 16px; border:1px solid var(--hairline); border-radius:8px;
@@ -462,6 +479,10 @@ input:focus,button:focus,.tier-chip:focus,.side-btn:focus,.ex-btn:focus,.iv-btn:
     <div class="side-toggle">
       <button class="side-btn active long" id="sideLong">LONGS</button>
       <button class="side-btn short" id="sideShort">SHORTS</button>
+    </div>
+    <div class="suggested-highs" id="suggestedHighs">
+      <div class="sh-label">Detected rejections</div>
+      <div class="sh-chips"><span class="sh-loading">loading chart…</span></div>
     </div>
   </div>
   <div class="field">
@@ -1018,6 +1039,126 @@ async function fetchREST() {
   }
 }
 
+// ── SWING HIGH DETECTION ──────────────────────────────────────────────────
+var swingHighLines = [];
+var detectedHighs  = [];
+
+function detectSwingHighs(candles) {
+  if (candles.length < 12) return [];
+
+  var LOOKBACK   = 4;      // candle must be highest in ±4 window
+  var MIN_DROP   = 1.0;    // price must fall at least 1% after the high
+  var DEDUP_PCT  = 0.008;  // ignore highs within 0.8% of a higher-scored one
+  var MAX_CANDLES = Math.min(candles.length, 250);
+  var start = candles.length - MAX_CANDLES;
+
+  var found = [];
+
+  for (var i = start + LOOKBACK; i < candles.length - LOOKBACK; i++) {
+    var pivot = candles[i].high;
+    var isPivot = true;
+    for (var j = i - LOOKBACK; j <= i + LOOKBACK; j++) {
+      if (j !== i && candles[j].high >= pivot) { isPivot = false; break; }
+    }
+    if (!isPivot) continue;
+
+    // Measure the lowest low after this candle
+    var minAfter = Infinity;
+    for (var k = i + 1; k < candles.length; k++) {
+      if (candles[k].low < minAfter) minAfter = candles[k].low;
+    }
+    var dropPct = (pivot - minAfter) / pivot * 100;
+    if (dropPct < MIN_DROP) continue;
+
+    // Wick ratio: how much of the candle body is an upper wick (0–1)
+    var c = candles[i];
+    var range = c.high - c.low;
+    var wickRatio = range > 0 ? (c.high - Math.max(c.open, c.close)) / range : 0;
+
+    // Recency score (0–1, recent = higher)
+    var recency = (i - start) / (candles.length - start);
+
+    // Final score weights: big drop + recent + strong wick
+    var score = dropPct * (0.4 + 0.6 * recency) * (1 + wickRatio * 0.5);
+
+    found.push({ price: pivot, time: candles[i].time, dropPct: dropPct, wickRatio: wickRatio, score: score });
+  }
+
+  found.sort(function(a, b) { return b.score - a.score; });
+
+  // Deduplicate by proximity
+  var deduped = [];
+  for (var fi = 0; fi < found.length; fi++) {
+    var h = found[fi];
+    var tooClose = false;
+    for (var di = 0; di < deduped.length; di++) {
+      if (Math.abs(deduped[di].price - h.price) / h.price < DEDUP_PCT) { tooClose = true; break; }
+    }
+    if (!tooClose) { deduped.push(h); if (deduped.length >= 5) break; }
+  }
+
+  return deduped;
+}
+
+function showSwingHighs(candles) {
+  // Clear old chart lines
+  swingHighLines.forEach(function(pl){ try { candleSeries.removePriceLine(pl); } catch(_){} });
+  swingHighLines = [];
+
+  detectedHighs = detectSwingHighs(candles);
+
+  var container = document.getElementById('suggestedHighs');
+  if (!detectedHighs.length) {
+    container.innerHTML = '<div class="sh-label">Detected rejections</div><div class="sh-chips"><span class="sh-loading">none found in this window</span></div>';
+    return;
+  }
+
+  var html = '<div class="sh-label">Detected rejections — click to use</div><div class="sh-chips">';
+  var currentVal = parseFloat(highInput.value);
+  detectedHighs.forEach(function(h, idx) {
+    var wickTag = h.wickRatio > 0.45 ? '<span class="sh-wick">▲wick</span>' : '';
+    var isActive = Math.abs(currentVal - h.price) / h.price < 0.001;
+    html += '<button class="sh-chip' + (isActive ? ' active' : '') + '" data-price="' + h.price.toFixed(2) + '">' +
+      '$' + fmt(h.price) + ' <span class="sh-drop">↓' + h.dropPct.toFixed(1) + '%</span>' + wickTag +
+      '</button>';
+  });
+  html += '</div>';
+  container.innerHTML = html;
+
+  container.querySelectorAll('.sh-chip').forEach(function(chip) {
+    chip.addEventListener('click', function() {
+      highInput.value = Math.round(parseFloat(chip.dataset.price));
+      container.querySelectorAll('.sh-chip').forEach(function(c){ c.classList.remove('active'); });
+      chip.classList.add('active');
+      render();
+    });
+  });
+
+  // Draw purple dashed lines on chart for each detected high
+  var purple = 'rgba(155, 109, 255, 0.65)';
+  detectedHighs.forEach(function(h, idx) {
+    try {
+      var pl = candleSeries.createPriceLine({
+        price: h.price,
+        color: purple,
+        lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: 'SH' + (idx + 1) + ' ↓' + h.dropPct.toFixed(1) + '%',
+      });
+      swingHighLines.push(pl);
+    } catch(_) {}
+  });
+
+  // Auto-select most significant high if user still has the placeholder default
+  var val = parseFloat(highInput.value);
+  if (detectedHighs.length && (isNaN(val) || val === 71400)) {
+    highInput.value = Math.round(detectedHighs[0].price);
+    container.querySelectorAll('.sh-chip')[0].classList.add('active');
+    render();
+  }
+}
+
 // ── CHART ─────────────────────────────────────────────────────────────────
 function initChart() {
   if (!window.LightweightCharts) return;
@@ -1077,6 +1218,7 @@ async function loadCandles() {
     if (candles.length) currentCandle = candles[candles.length - 1];
     liqMarkers = []; // reset markers on reload
     candleSeries.setMarkers([]);
+    showSwingHighs(candles);   // detect rejected highs + draw on chart
     updateChartLines(lastZones);
   } catch(_) {}
 }
