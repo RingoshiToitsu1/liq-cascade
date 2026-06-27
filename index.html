@@ -379,6 +379,10 @@ h1.display { font-size:21px; font-weight:800; letter-spacing:-.02em; }
 .sh-wick { color:var(--amber); margin-left:3px; font-size:8.5px; }
 .sh-chip.active .sh-drop { color:#FF8080; }
 .sh-loading { font-size:9.5px; color:var(--text-faint); }
+.sh-chip.manual { background:rgba(96,180,255,.08); border-color:rgba(96,180,255,.35); color:var(--watch); }
+.sh-chip.manual.active { background:rgba(96,180,255,.18); border-color:var(--watch); }
+.sh-chip.manual .sh-x { margin-left:5px; color:var(--text-faint); font-size:11px; line-height:1; }
+.sh-chip.manual .sh-x:hover { color:var(--bear); }
 
 /* ── FORMULA ── */
 .formula {
@@ -1097,6 +1101,7 @@ async function fetchREST() {
 var swingHighLines   = [];
 var swingHighMarkers = [];
 var detectedHighs    = [];
+var manualHighs      = [];   // user-set via right-click, persists across candle reloads
 var loadedCandles    = [];
 
 // Single source-of-truth for all chart markers (swing highs + liq events)
@@ -1237,29 +1242,55 @@ function showSwingHighs(candles, forceSelect) {
   var isShort = (side === 'short');
   detectedHighs = isShort ? detectSwingLows(candles) : detectSwingHighs(candles);
 
-  var container = document.getElementById('suggestedHighs');
-  var sectionLabel = isShort ? 'Detected bounces (dip rejections)' : 'Detected rejections';
-  if (!detectedHighs.length) {
-    container.innerHTML = '<div class="sh-label">' + sectionLabel + '</div><div class="sh-chips"><span class="sh-loading">none found in this window</span></div>';
-    return;
+  rebuildSwingChips(forceSelect);
+}
+
+function rebuildSwingChips(forceSelect) {
+  var isShort    = (side === 'short');
+  var container  = document.getElementById('suggestedHighs');
+  var currentVal = parseFloat(highInput.value);
+  var sectionLabel = isShort ? 'Detected bounces' : 'Detected rejections';
+
+  var html = '<div class="sh-label">' + sectionLabel + ' — right-click chart to add</div><div class="sh-chips">';
+
+  // Manual entries first (cyan chips with × remove button)
+  manualHighs.forEach(function(h) {
+    var isActive = Math.abs(currentVal - h.price) / h.price < 0.002;
+    html += '<button class="sh-chip manual' + (isActive ? ' active' : '') + '" data-price="' + h.price.toFixed(2) + '" data-manual="1">' +
+      '★ $' + fmt(h.price) + '<span class="sh-x" data-remove="' + h.price.toFixed(2) + '">×</span></button>';
+  });
+
+  // Auto-detected entries
+  if (detectedHighs.length) {
+    detectedHighs.forEach(function(h) {
+      var isActive = Math.abs(currentVal - h.price) / h.price < 0.002;
+      var pct = isShort
+        ? '<span class="sh-drop" style="color:var(--bull)">↑' + h.dropPct.toFixed(1) + '%</span>'
+        : '<span class="sh-drop">↓' + h.dropPct.toFixed(1) + '%</span>';
+      var wickTag = h.wickRatio > 0.45 ? '<span class="sh-wick">' + (isShort ? '▼wick' : '▲wick') + '</span>' : '';
+      html += '<button class="sh-chip' + (isActive ? ' active' : '') + '" data-price="' + h.price.toFixed(2) + '">' +
+        '$' + fmt(h.price) + ' ' + pct + wickTag + '</button>';
+    });
+  } else if (!manualHighs.length) {
+    html += '<span class="sh-loading">none found · right-click chart to set one</span>';
   }
 
-  var html = '<div class="sh-label">' + sectionLabel + ' — click chip or right-click chart</div><div class="sh-chips">';
-  var currentVal = parseFloat(highInput.value);
-  detectedHighs.forEach(function(h) {
-    var isActive = Math.abs(currentVal - h.price) / h.price < 0.002;
-    var pct = isShort
-      ? '<span class="sh-drop" style="color:var(--bull)">↑' + h.dropPct.toFixed(1) + '%</span>'
-      : '<span class="sh-drop">↓' + h.dropPct.toFixed(1) + '%</span>';
-    var wickTag = h.wickRatio > 0.45
-      ? '<span class="sh-wick">' + (isShort ? '▼wick' : '▲wick') + '</span>'
-      : '';
-    html += '<button class="sh-chip' + (isActive ? ' active' : '') + '" data-price="' + h.price.toFixed(2) + '">' +
-      '$' + fmt(h.price) + ' ' + pct + wickTag + '</button>';
-  });
   html += '</div>';
   container.innerHTML = html;
 
+  // Remove button on manual chips
+  container.querySelectorAll('.sh-x').forEach(function(x) {
+    x.addEventListener('click', function(e) {
+      e.stopPropagation();
+      var p = parseFloat(x.dataset.remove);
+      manualHighs = manualHighs.filter(function(h) { return Math.abs(h.price - p) / p > 0.001; });
+      rebuildSwingChips();
+      redrawSwingHighLines();
+      render();
+    });
+  });
+
+  // Select on chip click
   container.querySelectorAll('.sh-chip').forEach(function(chip) {
     chip.addEventListener('click', function() {
       highInput.value = Math.round(parseFloat(chip.dataset.price));
@@ -1270,11 +1301,13 @@ function showSwingHighs(candles, forceSelect) {
     });
   });
 
-  // Auto-select top result on first load, side switch, or interval change
+  // Auto-select on first load / side switch (skip if user has a manual entry active)
   var val = parseFloat(highInput.value);
-  if (detectedHighs.length && (forceSelect || isNaN(val) || val === 71400)) {
+  var hasManualActive = manualHighs.some(function(h) { return Math.abs(h.price - val) / val < 0.002; });
+  if (!hasManualActive && detectedHighs.length && (forceSelect || isNaN(val) || val === 71400)) {
     highInput.value = Math.round(detectedHighs[0].price);
-    container.querySelectorAll('.sh-chip')[0].classList.add('active');
+    container.querySelectorAll('.sh-chip:not(.manual)')[0] &&
+      container.querySelectorAll('.sh-chip:not(.manual)')[0].classList.add('active');
   }
 
   redrawSwingHighLines();
@@ -1286,34 +1319,59 @@ function redrawSwingHighLines() {
   swingHighLines   = [];
   swingHighMarkers = [];
 
-  if (!candleSeries || !detectedHighs.length) return;
+  if (!candleSeries) return;
 
   var selectedPrice = parseFloat(highInput.value);
+  var isShortMode   = (side === 'short');
 
+  // Auto-detected highs — purple lines
   detectedHighs.forEach(function(h, idx) {
-    var isSel  = Math.abs(selectedPrice - h.price) / h.price < 0.002;
-    var color  = isSel ? 'rgba(180,130,255,0.95)' : 'rgba(155,109,255,0.30)';
-    var width  = isSel ? 2 : 1;
-    var style  = isSel ? LightweightCharts.LineStyle.Solid : LightweightCharts.LineStyle.Dashed;
-    var title  = 'SH' + (idx + 1) + ' ↓' + h.dropPct.toFixed(1) + '%' + (isSel ? ' ◀' : '');
-
+    var isSel = Math.abs(selectedPrice - h.price) / h.price < 0.002;
     try {
       swingHighLines.push(candleSeries.createPriceLine({
-        price: h.price, color: color, lineWidth: width,
-        lineStyle: style, axisLabelVisible: true, title: title,
+        price: h.price,
+        color: isSel ? 'rgba(180,130,255,0.95)' : 'rgba(155,109,255,0.28)',
+        lineWidth: isSel ? 2 : 1,
+        lineStyle: isSel ? LightweightCharts.LineStyle.Solid : LightweightCharts.LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: 'SH' + (idx + 1) + (h.dropPct > 0 ? ' ↓' + h.dropPct.toFixed(1) + '%' : '') + (isSel ? ' ◀' : ''),
       }));
     } catch(_) {}
+    if (h.time) {
+      swingHighMarkers.push({
+        time: h.time,
+        position: isShortMode ? 'belowBar' : 'aboveBar',
+        color: isSel ? 'rgba(180,130,255,1)' : 'rgba(155,109,255,0.45)',
+        shape: isShortMode ? 'arrowUp' : 'arrowDown',
+        text: isSel ? '★ SH' + (idx + 1) : 'SH' + (idx + 1),
+        size: isSel ? 2 : 1,
+      });
+    }
+  });
 
-    // Arrow marker at the exact rejection candle (direction mirrors side)
-    var isShortMode = (side === 'short');
-    swingHighMarkers.push({
-      time:     h.time,
-      position: isShortMode ? 'belowBar' : 'aboveBar',
-      color:    isSel ? 'rgba(180,130,255,1)' : 'rgba(155,109,255,0.45)',
-      shape:    isShortMode ? 'arrowUp' : 'arrowDown',
-      text:     isSel ? '★ SH' + (idx + 1) : 'SH' + (idx + 1),
-      size:     isSel ? 2 : 1,
-    });
+  // Manually set highs — cyan lines
+  manualHighs.forEach(function(h, idx) {
+    var isSel = Math.abs(selectedPrice - h.price) / h.price < 0.002;
+    try {
+      swingHighLines.push(candleSeries.createPriceLine({
+        price: h.price,
+        color: isSel ? 'rgba(96,180,255,0.95)' : 'rgba(96,180,255,0.35)',
+        lineWidth: isSel ? 2 : 1,
+        lineStyle: isSel ? LightweightCharts.LineStyle.Solid : LightweightCharts.LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: '★ SET' + (idx + 1) + (isSel ? ' ◀' : ''),
+      }));
+    } catch(_) {}
+    if (h.time) {
+      swingHighMarkers.push({
+        time: h.time,
+        position: isShortMode ? 'belowBar' : 'aboveBar',
+        color: isSel ? 'rgba(96,180,255,1)' : 'rgba(96,180,255,0.5)',
+        shape: isShortMode ? 'arrowUp' : 'arrowDown',
+        text: isSel ? '★ SET' + (idx + 1) : 'SET' + (idx + 1),
+        size: isSel ? 2 : 1,
+      });
+    }
   });
 
   applyAllMarkers();
@@ -1759,15 +1817,24 @@ function showChartContextMenu(x, y, price) {
 function hideCtxMenu() { ctxMenu.style.display = 'none'; }
 
 document.getElementById('ctxSetBounce').addEventListener('click', function() {
-  highInput.value = ctxMenuPrice;
-  // Add it to detectedHighs so it gets a chip and a line
-  var already = detectedHighs.some(function(h) { return Math.abs(h.price - ctxMenuPrice) / ctxMenuPrice < 0.001; });
-  if (!already) {
-    detectedHighs.unshift({ price: ctxMenuPrice, time: Math.floor(Date.now()/1000), dropPct: 0, wickRatio: 0, score: 999 });
-    if (detectedHighs.length > 5) detectedHighs.pop();
-    // Rebuild chips
-    if (loadedCandles.length) showSwingHighs(loadedCandles);
+  // Find nearest candle time to anchor the marker
+  var nearestTime = Math.floor(Date.now() / 1000);
+  if (loadedCandles.length) {
+    var best = loadedCandles.reduce(function(a, b) {
+      return Math.abs(b.close - ctxMenuPrice) < Math.abs(a.close - ctxMenuPrice) ? b : a;
+    });
+    nearestTime = best.time;
   }
+
+  // Add to manualHighs (dedupe by price proximity)
+  var already = manualHighs.some(function(h) { return Math.abs(h.price - ctxMenuPrice) / ctxMenuPrice < 0.001; });
+  if (!already) {
+    manualHighs.unshift({ price: ctxMenuPrice, time: nearestTime, dropPct: 0, wickRatio: 0, manual: true });
+    if (manualHighs.length > 5) manualHighs.pop();
+  }
+
+  highInput.value = ctxMenuPrice;
+  rebuildSwingChips();
   redrawSwingHighLines();
   render();
   hideCtxMenu();
