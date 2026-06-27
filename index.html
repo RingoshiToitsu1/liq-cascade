@@ -121,7 +121,24 @@ h1.display { font-size:21px; font-weight:800; letter-spacing:-.02em; }
   cursor:pointer; transition:all .12s;
 }
 .iv-btn.active { background:rgba(96,180,255,.1); border-color:var(--watch); color:var(--watch); }
-#chartDiv { flex:1; min-height:360px; }
+#chartDiv { flex:1; min-height:360px; position:relative; }
+.chart-status {
+  display:none; position:absolute; inset:0; z-index:10;
+  align-items:center; justify-content:center; flex-direction:column; gap:8px;
+  background:rgba(19,21,26,0.82); font-size:12px; color:var(--text-dim); text-align:center;
+}
+.chart-status .cs-spin {
+  width:20px; height:20px; border:2px solid var(--hairline);
+  border-top-color:var(--watch); border-radius:50%;
+  animation:spin .8s linear infinite;
+}
+@keyframes spin { to { transform:rotate(360deg); } }
+.chart-status .cs-retry {
+  margin-top:4px; background:none; border:1px solid var(--hairline);
+  color:var(--watch); font-family:'IBM Plex Mono',monospace; font-size:10px;
+  padding:4px 12px; border-radius:4px; cursor:pointer;
+}
+.chart-status .cs-retry:hover { border-color:var(--watch); }
 
 /* ── LIQ FEED ── */
 .liq-feed { background:var(--panel); display:flex; flex-direction:column; overflow:hidden; }
@@ -442,7 +459,13 @@ input:focus,button:focus,.tier-chip:focus,.side-btn:focus,.ex-btn:focus,.iv-btn:
         <button class="iv-btn" data-iv="1h"  data-secs="3600">1h</button>
       </div>
     </div>
-    <div id="chartDiv"></div>
+    <div id="chartDiv">
+      <div class="chart-status" id="chartStatus">
+        <div class="cs-spin" id="csSpinner"></div>
+        <span id="csMsg">Loading chart…</span>
+        <button class="cs-retry" id="csRetry" style="display:none" onclick="loadCandles()">Retry</button>
+      </div>
+    </div>
   </div>
   <div class="liq-feed">
     <div class="feed-hdr">
@@ -1203,25 +1226,88 @@ function initChart() {
 
 async function loadCandles() {
   if (!candleSeries) return;
-  var ivMap = { 60:'1m', 300:'5m', 900:'15m', 3600:'1h' };
-  var ivStr = ivMap[currentIvSecs] || '15m';
-  try {
-    var ctrl = new AbortController();
-    var tid = setTimeout(function(){ ctrl.abort(); }, 8000);
-    var res  = await fetch('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=' + ivStr + '&limit=300', { signal: ctrl.signal });
-    clearTimeout(tid);
-    var data = await res.json();
-    if (!Array.isArray(data)) return;
-    var candles = data.map(function(k) {
-      return { time: Math.floor(k[0] / 1000), open: parseFloat(k[1]), high: parseFloat(k[2]), low: parseFloat(k[3]), close: parseFloat(k[4]) };
-    });
-    candleSeries.setData(candles);
-    if (candles.length) currentCandle = candles[candles.length - 1];
-    liqMarkers = []; // reset markers on reload
-    candleSeries.setMarkers([]);
-    showSwingHighs(candles);   // detect rejected highs + draw on chart
-    updateChartLines(lastZones);
-  } catch(_) {}
+
+  var binanceIv = { 60:'1m', 300:'5m', 900:'15m', 3600:'1h' }[currentIvSecs] || '15m';
+  var bybitIv   = { 60:'1',  300:'5',  900:'15',  3600:'60'  }[currentIvSecs] || '15';
+  var krakenIv  = { 60:1,    300:5,    900:15,    3600:60    }[currentIvSecs] || 15;
+
+  var SOURCES = [
+    {
+      name: 'Binance',
+      url:  'https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=' + binanceIv + '&limit=300',
+      parse: function(d) {
+        if (!Array.isArray(d) || !d.length) return null;
+        return d.map(function(k) {
+          return { time:Math.floor(k[0]/1000), open:+k[1], high:+k[2], low:+k[3], close:+k[4] };
+        });
+      },
+    },
+    {
+      name: 'Bybit',
+      url:  'https://api.bybit.com/v5/market/kline?category=linear&symbol=BTCUSDT&interval=' + bybitIv + '&limit=300',
+      parse: function(d) {
+        var list = d && d.result && d.result.list;
+        if (!Array.isArray(list) || !list.length) return null;
+        // Bybit returns newest-first — reverse it
+        return list.slice().reverse().map(function(k) {
+          return { time:Math.floor(+k[0]/1000), open:+k[1], high:+k[2], low:+k[3], close:+k[4] };
+        });
+      },
+    },
+    {
+      name: 'Kraken',
+      url:  'https://api.kraken.com/0/public/OHLC?pair=XBTUSD&interval=' + krakenIv,
+      parse: function(d) {
+        var rows = d && d.result && d.result.XXBTZUSD;
+        if (!Array.isArray(rows) || !rows.length) return null;
+        return rows.map(function(k) {
+          return { time:+k[0], open:+k[1], high:+k[2], low:+k[3], close:+k[4] };
+        });
+      },
+    },
+  ];
+
+  setChartStatus('loading', 'Loading chart…');
+
+  for (var si = 0; si < SOURCES.length; si++) {
+    var src = SOURCES[si];
+    setChartStatus('loading', 'Trying ' + src.name + '…');
+    try {
+      var ctrl = new AbortController();
+      var tid  = setTimeout(function(){ ctrl.abort(); }, 8000);
+      var res  = await fetch(src.url, { signal: ctrl.signal });
+      clearTimeout(tid);
+      var data    = await res.json();
+      var candles = src.parse(data);
+      if (!candles || candles.length < 2) continue;
+
+      candleSeries.setData(candles);
+      currentCandle = candles[candles.length - 1];
+      liqMarkers = [];
+      candleSeries.setMarkers([]);
+      showSwingHighs(candles);
+      updateChartLines(lastZones);
+      document.getElementById('chartLabel').textContent =
+        'BTC/USDT · ' + currentIvLabel + ' · ' + src.name + ' — liq zones overlaid';
+      setChartStatus('hidden');
+      return;
+    } catch(_) {}
+  }
+
+  setChartStatus('error', 'All chart sources failed');
+}
+
+function setChartStatus(state, msg) {
+  var el  = document.getElementById('chartStatus');
+  var sp  = document.getElementById('csSpinner');
+  var txt = document.getElementById('csMsg');
+  var btn = document.getElementById('csRetry');
+  if (!el) return;
+  if (state === 'hidden') { el.style.display = 'none'; return; }
+  el.style.display = 'flex';
+  txt.textContent  = msg || '';
+  sp.style.display  = state === 'loading' ? 'block' : 'none';
+  btn.style.display = state === 'error'   ? 'inline-block' : 'none';
 }
 
 function updateCurrentCandle(price) {
