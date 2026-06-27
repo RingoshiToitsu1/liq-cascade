@@ -1092,32 +1092,39 @@ function detectSwingHighs(candles) {
 
   var found = [];
 
-  for (var i = start + LOOKBACK; i < candles.length - LOOKBACK; i++) {
+  for (var i = start + LOOKBACK; i < candles.length - 1; i++) {
     var pivot = candles[i].high;
     var isPivot = true;
-    for (var j = i - LOOKBACK; j <= i + LOOKBACK; j++) {
-      if (j !== i && candles[j].high >= pivot) { isPivot = false; break; }
+
+    // Left side — full lookback required
+    for (var j = i - LOOKBACK; j < i; j++) {
+      if (candles[j].high >= pivot) { isPivot = false; break; }
     }
     if (!isPivot) continue;
 
-    // Measure the lowest low after this candle
+    // Right side — only use available candles (min 1); lets fresh highs qualify
+    var rightAvail = Math.min(LOOKBACK, candles.length - 1 - i);
+    for (var j = i + 1; j <= i + rightAvail; j++) {
+      if (candles[j].high >= pivot) { isPivot = false; break; }
+    }
+    if (!isPivot) continue;
+
     var minAfter = Infinity;
     for (var k = i + 1; k < candles.length; k++) {
       if (candles[k].low < minAfter) minAfter = candles[k].low;
     }
     var dropPct = (pivot - minAfter) / pivot * 100;
-    if (dropPct < MIN_DROP) continue;
 
-    // Wick ratio: how much of the candle body is an upper wick (0–1)
+    // Relax drop threshold for very recent candles — not enough time to fall yet
+    var distFromEnd = candles.length - 1 - i;
+    if (dropPct < (distFromEnd < 6 ? 0.15 : MIN_DROP)) continue;
+
     var c = candles[i];
     var range = c.high - c.low;
     var wickRatio = range > 0 ? (c.high - Math.max(c.open, c.close)) / range : 0;
-
-    // Recency score (0–1, recent = higher)
     var recency = (i - start) / (candles.length - start);
-
-    // Final score weights: big drop + recent + strong wick
     var score = dropPct * (0.4 + 0.6 * recency) * (1 + wickRatio * 0.5);
+    if (distFromEnd < 6) score *= 1.5;
 
     found.push({ price: pivot, time: candles[i].time, dropPct: dropPct, wickRatio: wickRatio, score: score });
   }
@@ -1147,29 +1154,40 @@ function detectSwingLows(candles) {
   var start = candles.length - MAX_CANDLES;
   var found = [];
 
-  for (var i = start + LOOKBACK; i < candles.length - LOOKBACK; i++) {
+  for (var i = start + LOOKBACK; i < candles.length - 1; i++) {
     var pivot = candles[i].low;
     var isPivot = true;
-    for (var j = i - LOOKBACK; j <= i + LOOKBACK; j++) {
-      if (j !== i && candles[j].low <= pivot) { isPivot = false; break; }
+
+    // Left side — full lookback required
+    for (var j = i - LOOKBACK; j < i; j++) {
+      if (candles[j].low <= pivot) { isPivot = false; break; }
     }
     if (!isPivot) continue;
 
-    // Measure highest high after this pivot (confirms the bounce)
+    // Right side — only use available candles (min 1); lets fresh dips qualify
+    var rightAvail = Math.min(LOOKBACK, candles.length - 1 - i);
+    for (var j = i + 1; j <= i + rightAvail; j++) {
+      if (candles[j].low < pivot) { isPivot = false; break; }
+    }
+    if (!isPivot) continue;
+
     var maxAfter = -Infinity;
     for (var k = i + 1; k < candles.length; k++) {
       if (candles[k].high > maxAfter) maxAfter = candles[k].high;
     }
     var risePct = (maxAfter - pivot) / pivot * 100;
-    if (risePct < MIN_RISE) continue;
 
-    // Lower wick ratio: how prominent is the lower shadow
+    // Relax rise threshold for very recent dips — bounce hasn't had time to develop yet
+    var distFromEnd = candles.length - 1 - i;
+    if (risePct < (distFromEnd < 6 ? 0.15 : MIN_RISE)) continue;
+
     var c = candles[i];
     var range = c.high - c.low;
     var wickRatio = range > 0 ? (Math.min(c.open, c.close) - c.low) / range : 0;
-
     var recency = (i - start) / (candles.length - start);
     var score   = risePct * (0.4 + 0.6 * recency) * (1 + wickRatio * 0.5);
+    if (distFromEnd < 6) score *= 1.5;
+
     found.push({ price: pivot, time: candles[i].time, dropPct: risePct, wickRatio: wickRatio, score: score });
   }
 
@@ -1349,8 +1367,8 @@ async function loadCandles() {
 
   var SOURCES = [
     {
-      name: 'Binance',
-      url:  'https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=' + binanceIv + '&limit=300',
+      name: 'Binance Perp',
+      url:  'https://fapi.binance.com/fapi/v1/klines?symbol=BTCUSDT&interval=' + binanceIv + '&limit=300',
       parse: function(d) {
         if (!Array.isArray(d) || !d.length) return null;
         return d.map(function(k) {
