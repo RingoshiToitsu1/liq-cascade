@@ -396,6 +396,28 @@ h1.display { font-size:21px; font-weight:800; letter-spacing:-.02em; }
 
 footer { margin-top:30px; text-align:center; font-size:10.5px; color:var(--text-faint); }
 
+/* ── CHART CONTEXT MENU ── */
+#chartCtxMenu {
+  display:none; position:fixed; z-index:9999;
+  background:var(--panel-raised); border:1px solid var(--hairline);
+  border-radius:6px; padding:4px; min-width:200px;
+  box-shadow:0 8px 24px rgba(0,0,0,0.5);
+  font-family:'IBM Plex Mono',monospace; font-size:11px;
+}
+.ctx-label {
+  padding:6px 10px 4px; font-size:9.5px; color:var(--text-faint);
+  text-transform:uppercase; letter-spacing:.08em; border-bottom:1px solid var(--hairline);
+  margin-bottom:3px;
+}
+.ctx-item {
+  display:flex; align-items:center; gap:8px;
+  padding:7px 10px; border-radius:4px; cursor:pointer;
+  color:var(--text-dim); transition:background .1s;
+}
+.ctx-item:hover { background:rgba(255,255,255,0.05); color:var(--text); }
+.ctx-item .ctx-icon { font-size:13px; flex-shrink:0; }
+.ctx-item .ctx-price { color:var(--bull); font-weight:600; margin-left:auto; font-size:10.5px; }
+
 /* ── RESPONSIVE ── */
 @media(max-width:1000px) {
   .chart-section { grid-template-columns:1fr; }
@@ -589,7 +611,21 @@ input:focus,button:focus,.tier-chip:focus,.side-btn:focus,.ex-btn:focus,.iv-btn:
   </div>
 </div>
 
-<footer>No data stored · price via Binance/Kraken · liq events via Bybit public stream · Not financial advice</footer>
+<footer>No data stored · price &amp; chart via OKX perp · liq events via OKX · Not financial advice</footer>
+
+<div id="chartCtxMenu">
+  <div class="ctx-label" id="ctxLabel">$—</div>
+  <div class="ctx-item" id="ctxSetBounce">
+    <span class="ctx-icon">★</span>
+    <span>Set as detected bounce</span>
+    <span class="ctx-price" id="ctxPrice"></span>
+  </div>
+  <div class="ctx-item" id="ctxSetH2">
+    <span class="ctx-icon">◈</span>
+    <span>Set as second scenario (H2)</span>
+    <span class="ctx-price" id="ctxPrice2"></span>
+  </div>
+</div>
 </div>
 
 <script>
@@ -1208,7 +1244,7 @@ function showSwingHighs(candles, forceSelect) {
     return;
   }
 
-  var html = '<div class="sh-label">' + sectionLabel + ' — click chip or drag line on chart</div><div class="sh-chips">';
+  var html = '<div class="sh-label">' + sectionLabel + ' — click chip or right-click chart</div><div class="sh-chips">';
   var currentVal = parseFloat(highInput.value);
   detectedHighs.forEach(function(h) {
     var isActive = Math.abs(currentVal - h.price) / h.price < 0.002;
@@ -1334,7 +1370,7 @@ function initChart() {
 
   // Click on/near a swing high line → select it
   chart.subscribeClick(function(param) {
-    if (shDragging || !param.point || !detectedHighs.length || !candleSeries) return;
+    if (!param.point || !detectedHighs.length || !candleSeries) return;
     var price = candleSeries.coordinateToPrice(param.point.y);
     if (!price || isNaN(price)) return;
     var nearest = null, minDist = Infinity;
@@ -1345,36 +1381,14 @@ function initChart() {
     if (nearest) selectSwingHigh(nearest);
   });
 
-  // Drag a SH line vertically to reposition the entry price
-  var shDragging = false;
-  container.addEventListener('mousedown', function(e) {
+  // Right-click on chart → context menu to set entry price at that level
+  container.addEventListener('contextmenu', function(e) {
+    e.preventDefault();
     if (!candleSeries) return;
     var rect = container.getBoundingClientRect();
     var price = candleSeries.coordinateToPrice(e.clientY - rect.top);
-    if (!price || isNaN(price)) return;
-    var nearest = null, minDist = Infinity;
-    detectedHighs.forEach(function(h) {
-      var d = Math.abs(h.price - price) / h.price;
-      if (d < 0.008 && d < minDist) { nearest = h; minDist = d; }
-    });
-    if (!nearest) return;
-    shDragging = true;
-    highInput.value = Math.round(nearest.price);
-    container.style.cursor = 'ns-resize';
-    e.preventDefault();
-  });
-  document.addEventListener('mousemove', function(e) {
-    if (!shDragging || !candleSeries) return;
-    var rect = container.getBoundingClientRect();
-    var price = candleSeries.coordinateToPrice(e.clientY - rect.top);
-    if (price && !isNaN(price) && price > 0) {
-      highInput.value = Math.round(price);
-      redrawSwingHighLines();
-      render();
-    }
-  });
-  document.addEventListener('mouseup', function() {
-    if (shDragging) { shDragging = false; container.style.cursor = ''; }
+    if (!price || isNaN(price) || price <= 0) return;
+    showChartContextMenu(e.clientX, e.clientY, Math.round(price));
   });
 
   loadCandles();
@@ -1724,6 +1738,50 @@ async function pollLiqREST() {
   } catch(_) {}
 }
 setInterval(pollLiqREST, 15000);
+
+// ── Chart context menu ────────────────────────────────────────────────────
+var ctxMenu     = document.getElementById('chartCtxMenu');
+var ctxMenuPrice = 0;
+
+function showChartContextMenu(x, y, price) {
+  ctxMenuPrice = price;
+  document.getElementById('ctxLabel').textContent   = 'At $' + fmt(price);
+  document.getElementById('ctxPrice').textContent   = '$' + fmt(price);
+  document.getElementById('ctxPrice2').textContent  = '$' + fmt(price);
+
+  // Position menu, keeping it on-screen
+  ctxMenu.style.display = 'block';
+  var mw = ctxMenu.offsetWidth, mh = ctxMenu.offsetHeight;
+  ctxMenu.style.left = Math.min(x, window.innerWidth  - mw - 8) + 'px';
+  ctxMenu.style.top  = Math.min(y, window.innerHeight - mh - 8) + 'px';
+}
+
+function hideCtxMenu() { ctxMenu.style.display = 'none'; }
+
+document.getElementById('ctxSetBounce').addEventListener('click', function() {
+  highInput.value = ctxMenuPrice;
+  // Add it to detectedHighs so it gets a chip and a line
+  var already = detectedHighs.some(function(h) { return Math.abs(h.price - ctxMenuPrice) / ctxMenuPrice < 0.001; });
+  if (!already) {
+    detectedHighs.unshift({ price: ctxMenuPrice, time: Math.floor(Date.now()/1000), dropPct: 0, wickRatio: 0, score: 999 });
+    if (detectedHighs.length > 5) detectedHighs.pop();
+    // Rebuild chips
+    if (loadedCandles.length) showSwingHighs(loadedCandles);
+  }
+  redrawSwingHighLines();
+  render();
+  hideCtxMenu();
+});
+
+document.getElementById('ctxSetH2').addEventListener('click', function() {
+  highInput2.value = ctxMenuPrice;
+  render();
+  hideCtxMenu();
+});
+
+document.addEventListener('click',       hideCtxMenu);
+document.addEventListener('contextmenu', function(e) { if (e.target.closest('#chartCtxMenu')) return; hideCtxMenu(); }, true);
+document.addEventListener('keydown',     function(e) { if (e.key === 'Escape') hideCtxMenu(); });
 
 // ── Boot ──────────────────────────────────────────────────────────────────
 connectWS();
