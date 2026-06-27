@@ -945,51 +945,102 @@
     render();
   }
 
-  // ── Binance WebSocket ─────────────────────────────────────────────────────
+  // ── WebSocket waterfall ───────────────────────────────────────────────────
+  // Port 9443 is blocked by most ISPs. Try sources in order; rotate on failure.
+  const WS_SOURCES = [
+    {
+      label: 'Binance WS',
+      url: 'wss://stream.binance.com:443/ws/btcusdt@aggTrade',
+      onmessage: d => (d.p ? parseFloat(d.p) : null),
+    },
+    {
+      label: 'Kraken WS',
+      url: 'wss://ws.kraken.com/v2',
+      subscribe: { method: 'subscribe', params: { channel: 'ticker', symbol: ['BTC/USD'] } },
+      onmessage: d => {
+        if (d.channel === 'ticker' && Array.isArray(d.data) && d.data[0]?.last)
+          return parseFloat(d.data[0].last);
+        return null;
+      },
+    },
+    {
+      label: 'Binance WS (9443)',
+      url: 'wss://stream.binance.com:9443/ws/btcusdt@aggTrade',
+      onmessage: d => (d.p ? parseFloat(d.p) : null),
+    },
+  ];
+
+  let wsIdx = 0;
+  let wsConnectTimer = null;
+
   function connectWS() {
+    clearTimeout(wsConnectTimer);
     try { if (ws) ws.close(); } catch (_) {}
-    ws = new WebSocket('wss://stream.binance.com:9443/ws/btcusdt@aggTrade');
+
+    const src = WS_SOURCES[wsIdx % WS_SOURCES.length];
+    sourceEl.textContent = 'trying ' + src.label + '…';
+
+    ws = new WebSocket(src.url);
+    wsAlive = false;
+
+    // If no open event within 6 s, move to next source
+    const timeout = setTimeout(() => {
+      if (!wsAlive) { wsIdx++; try { ws.close(); } catch (_) {} }
+    }, 6000);
 
     ws.onopen = () => {
+      clearTimeout(timeout);
       wsAlive = true;
       wsDot.className = 'ws-dot live';
+      sourceEl.textContent = src.label + ' · live';
+      if (src.subscribe) ws.send(JSON.stringify(src.subscribe));
     };
 
     ws.onmessage = e => {
       try {
         const d = JSON.parse(e.data);
-        if (d.p) onPrice(parseFloat(d.p), 'Binance WS · live');
+        const p = src.onmessage(d);
+        if (p && !isNaN(p)) onPrice(p, src.label + ' · live');
       } catch (_) {}
     };
 
     ws.onclose = () => {
+      clearTimeout(timeout);
       wsAlive = false;
       wsDot.className = 'ws-dot err';
-      sourceEl.textContent = 'WS closed · reconnecting…';
-      setTimeout(connectWS, 4000);
+      // Rotate to next source after brief pause
+      wsConnectTimer = setTimeout(() => { wsIdx++; connectWS(); }, 3000);
     };
 
-    ws.onerror = () => ws.close();
+    ws.onerror = () => { try { ws.close(); } catch (_) {} };
   }
 
-  // ── REST fallback ─────────────────────────────────────────────────────────
+  // ── REST fallback (polls every 10 s when WS is down) ─────────────────────
   async function fetchREST() {
     if (wsAlive) return;
     const sources = [
       {
         url: 'https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT',
         parse: d => parseFloat(d.price),
-        label: 'Binance REST · ~10 s'
+        label: 'Binance REST · ~10 s',
       },
       {
         url: 'https://api.coinbase.com/v2/prices/BTC-USD/spot',
         parse: d => parseFloat(d?.data?.amount),
-        label: 'Coinbase REST · ~10 s'
+        label: 'Coinbase REST · ~10 s',
+      },
+      {
+        url: 'https://api.kraken.com/0/public/Ticker?pair=XBTUSD',
+        parse: d => parseFloat(d?.result?.XXBTZUSD?.c?.[0]),
+        label: 'Kraken REST · ~10 s',
       },
     ];
     for (const src of sources) {
       try {
-        const res  = await fetch(src.url, { signal: AbortSignal.timeout(5000) });
+        const ctrl = new AbortController();
+        const tid  = setTimeout(() => ctrl.abort(), 5000);
+        const res  = await fetch(src.url, { signal: ctrl.signal });
+        clearTimeout(tid);
         const data = await res.json();
         const p = src.parse(data);
         if (p && !isNaN(p)) {
@@ -1000,8 +1051,10 @@
       } catch (_) {}
     }
     wsDot.className = 'ws-dot err';
-    priceEl.textContent = 'unavailable';
-    sourceEl.textContent = 'price feed error';
+    if (!livePrice) {
+      priceEl.textContent = 'unavailable';
+      sourceEl.textContent = 'all feeds failed';
+    }
   }
 
   // ── Boot ──────────────────────────────────────────────────────────────────
