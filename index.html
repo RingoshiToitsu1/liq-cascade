@@ -97,16 +97,12 @@ h1.display { font-size:21px; font-weight:800; letter-spacing:-.02em; }
 
 /* ── CHART SECTION ── */
 .chart-section {
-  display:grid;
-  grid-template-columns: 1fr 300px;
-  gap:1px;
-  background:var(--hairline);
   border:1px solid var(--hairline);
   border-radius:8px;
   overflow:hidden;
   margin-bottom:20px;
+  background:var(--panel);
 }
-.chart-wrap { background:var(--panel); display:flex; flex-direction:column; min-height:400px; }
 .chart-toolbar {
   display:flex; justify-content:space-between; align-items:center;
   padding:10px 14px; border-bottom:1px solid var(--hairline-soft);
@@ -140,49 +136,6 @@ h1.display { font-size:21px; font-weight:800; letter-spacing:-.02em; }
 }
 .chart-status .cs-retry:hover { border-color:var(--watch); }
 
-/* ── LIQ FEED ── */
-.liq-feed { background:var(--panel); display:flex; flex-direction:column; overflow:hidden; }
-.feed-hdr {
-  display:flex; justify-content:space-between; align-items:center;
-  padding:10px 14px; border-bottom:1px solid var(--hairline-soft); flex-shrink:0;
-}
-.feed-hdr span:first-child { font-size:10px; color:var(--text-dim); text-transform:uppercase; letter-spacing:.1em; font-weight:600; }
-.feed-dot { width:6px; height:6px; border-radius:50%; background:var(--text-faint); }
-.feed-dot.live { background:var(--bear); animation:blink 1.5s ease-in-out infinite; }
-
-.feed-stats {
-  display:grid; grid-template-columns:repeat(3,1fr);
-  border-bottom:1px solid var(--hairline-soft); flex-shrink:0;
-}
-.feed-stat { padding:8px 10px; border-right:1px solid var(--hairline-soft); }
-.feed-stat:last-child { border-right:none; }
-.feed-stat .sv { font-size:13px; font-weight:600; color:var(--text); }
-.feed-stat .sl { font-size:9px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.06em; margin-top:2px; }
-#statLongVol  .sv { color:var(--bear); }
-#statShortVol .sv { color:var(--bull); }
-
-.feed-list { flex:1; overflow-y:auto; }
-.feed-list::-webkit-scrollbar { width:3px; }
-.feed-list::-webkit-scrollbar-track { background:transparent; }
-.feed-list::-webkit-scrollbar-thumb { background:var(--hairline); border-radius:2px; }
-.feed-empty { padding:18px 14px; font-size:11px; color:var(--text-faint); }
-
-.feed-item {
-  display:grid; grid-template-columns:38px 60px 1fr 44px;
-  gap:3px; align-items:center;
-  padding:5px 12px; border-bottom:1px solid var(--hairline-soft);
-  font-size:10px; cursor:default;
-}
-.feed-item:last-child { border-bottom:none; }
-.fi-time  { color:var(--text-faint); font-size:9px; }
-.fi-type  { font-size:8px; font-weight:700; letter-spacing:.04em; padding:2px 4px; border-radius:3px; text-align:center; }
-.fi-long  .fi-type { background:rgba(255,92,92,.12);  color:var(--bear); }
-.fi-short .fi-type { background:rgba(61,220,132,.12); color:var(--bull); }
-.fi-price { color:var(--text-dim); font-size:10px; font-weight:600; text-align:right; }
-.fi-usd   { color:var(--text-faint); font-size:9px; text-align:right; }
-.fi-long  .fi-usd { color:rgba(255,92,92,.7); }
-.fi-short .fi-usd { color:rgba(61,220,132,.7); }
-.fi-lev   { font-size:8px; color:var(--amber); font-weight:700; }
 
 /* ── CONTROLS ── */
 .controls {
@@ -423,11 +376,6 @@ footer { margin-top:30px; text-align:center; font-size:10.5px; color:var(--text-
 .ctx-item .ctx-price { color:var(--bull); font-weight:600; margin-left:auto; font-size:10.5px; }
 
 /* ── RESPONSIVE ── */
-@media(max-width:1000px) {
-  .chart-section { grid-template-columns:1fr; }
-  .liq-feed { border-top:1px solid var(--hairline); max-height:280px; }
-  .feed-list { max-height:200px; }
-}
 @media(max-width:760px) {
   .controls { grid-template-columns:1fr 1fr; }
   .cascade-row { grid-template-columns:42px 62px 1fr 90px; height:auto; padding:10px 12px; gap:5px; }
@@ -454,7 +402,7 @@ input:focus,button:focus,.tier-chip:focus,.side-btn:focus,.ex-btn:focus,.iv-btn:
 <header>
   <div>
     <div class="brand"><span class="mark"></span><h1 class="display">CASCADE</h1></div>
-    <p class="tagline">Liquidation zone calculator · live chart · real-time liq feed</p>
+    <p class="tagline">Liquidation zone calculator · live OKX perp chart</p>
   </div>
   <div class="price-widget">
     <div class="pw-label">BTC/USDT <span class="ws-dot" id="wsDot"></span></div>
@@ -474,47 +422,22 @@ input:focus,button:focus,.tier-chip:focus,.side-btn:focus,.ex-btn:focus,.iv-btn:
   </div>
 </div>
 
-<!-- Chart + Liq Feed -->
+<!-- Chart -->
 <div class="chart-section">
-  <div class="chart-wrap">
-    <div class="chart-toolbar">
-      <span class="ct-label" id="chartLabel">BTC/USDT · 15m — liq zones overlaid</span>
-      <div class="iv-btns">
-        <button class="iv-btn" data-iv="1m"  data-secs="60">1m</button>
-        <button class="iv-btn" data-iv="5m"  data-secs="300">5m</button>
-        <button class="iv-btn active" data-iv="15m" data-secs="900">15m</button>
-        <button class="iv-btn" data-iv="1h"  data-secs="3600">1h</button>
-      </div>
-    </div>
-    <div id="chartDiv">
-      <div class="chart-status" id="chartStatus">
-        <div class="cs-spin" id="csSpinner"></div>
-        <span id="csMsg">Loading chart…</span>
-        <button class="cs-retry" id="csRetry" style="display:none" onclick="loadCandles()">Retry</button>
-      </div>
+  <div class="chart-toolbar">
+    <span class="ct-label" id="chartLabel">BTC/USDT · 15m — liq zones overlaid</span>
+    <div class="iv-btns">
+      <button class="iv-btn" data-iv="1m"  data-secs="60">1m</button>
+      <button class="iv-btn" data-iv="5m"  data-secs="300">5m</button>
+      <button class="iv-btn active" data-iv="15m" data-secs="900">15m</button>
+      <button class="iv-btn" data-iv="1h"  data-secs="3600">1h</button>
     </div>
   </div>
-  <div class="liq-feed">
-    <div class="feed-hdr">
-      <span>LIVE LIQUIDATIONS · OKX</span>
-      <span class="feed-dot" id="feedDot"></span>
-    </div>
-    <div class="feed-stats">
-      <div class="feed-stat" id="statLongVol">
-        <div class="sv" id="svLong">$0</div>
-        <div class="sl">Long liq 1m</div>
-      </div>
-      <div class="feed-stat" id="statShortVol">
-        <div class="sv" id="svShort">$0</div>
-        <div class="sl">Short liq 1m</div>
-      </div>
-      <div class="feed-stat">
-        <div class="sv" id="svCount">0</div>
-        <div class="sl">Events 1m</div>
-      </div>
-    </div>
-    <div class="feed-list" id="feedList">
-      <div class="feed-empty">Connecting to OKX…</div>
+  <div id="chartDiv">
+    <div class="chart-status" id="chartStatus">
+      <div class="cs-spin" id="csSpinner"></div>
+      <span id="csMsg">Loading chart…</span>
+      <button class="cs-retry" id="csRetry" style="display:none" onclick="loadCandles()">Retry</button>
     </div>
   </div>
 </div>
@@ -666,7 +589,6 @@ let currentIvSecs = 900;       // 15m default
 let currentIvLabel = '15m';
 let currentCandle = null;      // {time,open,high,low,close} for live update
 let priceLines = [];           // LW chart price lines
-let liqMarkers = [];           // accumulated markers for chart
 let lastZones = [];            // last computed zones (for chart line update)
 
 // Chart objects (null until LW loads)
@@ -796,12 +718,13 @@ function render() {
     if (!clusterSet.has(idx+1)) clusterEnd.add(idx);
   });
 
-  // Scan candles since the selected detected high/low for historical zone clearing
+  // Scan candles since the selected high/low (detected OR manual) for historical zone clearing
   var historicalExtreme = null;
-  if (loadedCandles.length && detectedHighs.length) {
-    for (var hi = 0; hi < detectedHighs.length; hi++) {
-      if (Math.abs(detectedHighs[hi].price - entry) / entry < 0.003) {
-        var refTime = detectedHighs[hi].time;
+  if (loadedCandles.length) {
+    var allLevels = detectedHighs.concat(manualHighs);
+    for (var hi = 0; hi < allLevels.length; hi++) {
+      if (Math.abs(allLevels[hi].price - entry) / entry < 0.003) {
+        var refTime = allLevels[hi].time;
         var ext = side === 'long' ? Infinity : -Infinity;
         for (var ci = 0; ci < loadedCandles.length; ci++) {
           if (loadedCandles[ci].time < refTime) continue;
@@ -1104,11 +1027,9 @@ var detectedHighs    = [];
 var manualHighs      = [];   // user-set via right-click, persists across candle reloads
 var loadedCandles    = [];
 
-// Single source-of-truth for all chart markers (swing highs + liq events)
 function applyAllMarkers() {
   if (!candleSeries) return;
-  var all = swingHighMarkers.concat(liqMarkers);
-  all.sort(function(a, b) { return a.time - b.time; });
+  var all = swingHighMarkers.slice().sort(function(a, b) { return a.time - b.time; });
   try { candleSeries.setMarkers(all); } catch(_) {}
 }
 
@@ -1439,14 +1360,27 @@ function initChart() {
     if (nearest) selectSwingHigh(nearest);
   });
 
-  // Right-click on chart → context menu to set entry price at that level
+  // Right-click on chart → snap to nearest candle wick, show context menu
   container.addEventListener('contextmenu', function(e) {
     e.preventDefault();
     if (!candleSeries) return;
-    var rect = container.getBoundingClientRect();
+    var rect  = container.getBoundingClientRect();
     var price = candleSeries.coordinateToPrice(e.clientY - rect.top);
     if (!price || isNaN(price) || price <= 0) return;
-    showChartContextMenu(e.clientX, e.clientY, Math.round(price));
+
+    // Snap to the wick (high or low) of whichever candle is closest to the click price
+    var snapped = price;
+    var snapTime = Math.floor(Date.now() / 1000);
+    if (loadedCandles.length) {
+      var best = loadedCandles.reduce(function(a, b) {
+        var dA = Math.min(Math.abs(a.high - price), Math.abs(a.low - price));
+        var dB = Math.min(Math.abs(b.high - price), Math.abs(b.low - price));
+        return dB < dA ? b : a;
+      });
+      snapped  = Math.abs(best.high - price) <= Math.abs(best.low - price) ? best.high : best.low;
+      snapTime = best.time;
+    }
+    showChartContextMenu(e.clientX, e.clientY, snapped, snapTime);
   });
 
   loadCandles();
@@ -1527,7 +1461,6 @@ async function loadCandles() {
 
       candleSeries.setData(candles);
       currentCandle = candles[candles.length - 1];
-      liqMarkers = [];
       loadedCandles = candles;
       showSwingHighs(candles, true);  // resets swingHighMarkers + calls applyAllMarkers
       updateChartLines(lastZones);
@@ -1606,204 +1539,16 @@ function updateChartLines(zones) {
   });
 }
 
-// ── LIQ EVENTS ───────────────────────────────────────────────────────────
-var liqEvents = [];
-
-function addLiqEvent(ev) {
-  liqEvents.unshift(ev);
-  if (liqEvents.length > 300) liqEvents.pop();
-  renderFeed();
-  updateFeedStats();
-  if (ev.usdValue >= 5000 && candleSeries) addLiqChartMarker(ev);
-}
-
-function addLiqChartMarker(ev) {
-  if (!candleSeries) return;
-  var now = Math.floor(ev.time / 1000);
-  var t   = now - (now % currentIvSecs);
-  var size = Math.min(Math.ceil(ev.usdValue / 200000) + 1, 4);
-  liqMarkers.push({
-    time:     t,
-    position: ev.isLong ? 'belowBar' : 'aboveBar',
-    color:    ev.isLong ? '#FF5C5C' : '#3DDC84',
-    shape:    ev.isLong ? 'arrowDown' : 'arrowUp',
-    text:     fmtUsd(ev.usdValue),
-    size:     size,
-  });
-  // Must be sorted by time
-  liqMarkers.sort(function(a,b){ return a.time - b.time; });
-  if (liqMarkers.length > 120) liqMarkers = liqMarkers.slice(-120);
-  applyAllMarkers();
-}
-
-// Back-calculate estimated leverage from liq price vs current entry
-function estimateLev(liqPrice, isLong) {
-  var entry = parseFloat(highInput.value);
-  var maint = parseFloat(maintInput.value) || 0;
-  var fee   = parseFloat(feeInput.value)   || 0;
-  if (!entry || !liqPrice || entry <= 0) return null;
-  var cushion = isLong ? (entry - liqPrice) / entry : (liqPrice - entry) / entry;
-  var net = cushion - (maint / 100) - (fee / 100);
-  if (net <= 0) return null;
-  var lev = Math.round(1 / net);
-  return (lev >= 2 && lev <= 200) ? lev : null;
-}
-
-function renderFeed() {
-  var list = document.getElementById('feedList');
-  if (!liqEvents.length) {
-    list.innerHTML = '<div class="feed-empty">No events yet…</div>';
-    return;
-  }
-  var rows = liqEvents.slice(0, 40).map(function(ev) {
-    var d   = new Date(ev.time);
-    var t   = d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0') + ':' + d.getSeconds().toString().padStart(2,'0');
-    var cls = ev.isLong ? 'fi-long' : 'fi-short';
-    var lev = estimateLev(ev.price, ev.isLong);
-    var levStr = lev ? '~' + lev + 'x' : '?';
-    var side   = ev.isLong ? 'LONG' : 'SHORT';
-    var tooltip = side + ' LIQ @ $' + fmt(ev.price) + ' · ' + levStr + ' leverage · ' + fmtUsd(ev.usdValue);
-    return '<div class="feed-item ' + cls + '" title="' + tooltip + '">' +
-      '<span class="fi-time">' + t + '</span>' +
-      '<span class="fi-type">' + side + '<br><span class="fi-lev">' + levStr + '</span></span>' +
-      '<span class="fi-price">$' + fmt(ev.price) + '</span>' +
-      '<span class="fi-usd">' + fmtUsd(ev.usdValue) + '</span>' +
-      '</div>';
-  });
-  list.innerHTML = rows.join('');
-}
-
-function updateFeedStats() {
-  var now = Date.now();
-  var recent = liqEvents.filter(function(e){ return now - e.time < 60000; });
-  var lv = recent.filter(function(e){ return e.isLong;  }).reduce(function(s,e){ return s+e.usdValue; }, 0);
-  var sv = recent.filter(function(e){ return !e.isLong; }).reduce(function(s,e){ return s+e.usdValue; }, 0);
-  document.getElementById('svLong').textContent  = fmtUsd(lv);
-  document.getElementById('svShort').textContent = fmtUsd(sv);
-  document.getElementById('svCount').textContent  = recent.length;
-}
-setInterval(updateFeedStats, 5000);
-
-// ── OKX Liquidation Feed — WS with REST polling fallback ─────────────────
-var liqWs     = null;
-var liqPingId = null;
-var seenLiqTs = new Set(); // dedup REST-polled events
-
-function setFeedStatus(msg) {
-  var list = document.getElementById('feedList');
-  if (list && !liqEvents.length) list.innerHTML = '<div class="feed-empty">' + msg + '</div>';
-}
-
-function connectLiqWS() {
-  clearInterval(liqPingId);
-  try { if (liqWs) liqWs.close(); } catch(_) {}
-
-  var feedDot = document.getElementById('feedDot');
-  var feedHdr = document.querySelector('.feed-hdr span:first-child');
-  if (feedHdr) feedHdr.textContent = 'LIVE LIQUIDATIONS · OKX';
-  setFeedStatus('Connecting to OKX…');
-
-  // Try both OKX endpoints (8443 and AWS)
-  var urls = ['wss://ws.okx.com:8443/ws/v5/public', 'wss://wsaws.okx.com:8443/ws/v5/public'];
-  var urlIdx = 0;
-
-  function tryNext() {
-    if (urlIdx >= urls.length) {
-      feedDot.className = 'feed-dot err';
-      setFeedStatus('WS unavailable — using REST polling');
-      return;
-    }
-    try { if (liqWs) liqWs.close(); } catch(_) {}
-    liqWs = new WebSocket(urls[urlIdx++]);
-
-    var timeout = setTimeout(function() {
-      if (liqWs.readyState !== 1) { try { liqWs.close(); } catch(_) {} tryNext(); }
-    }, 7000);
-
-    liqWs.onopen = function() {
-      clearTimeout(timeout);
-      feedDot.className = 'feed-dot live';
-      setFeedStatus('Connected · waiting for liq events…');
-      liqWs.send(JSON.stringify({ op:'subscribe', args:[{ channel:'liquidation-orders', instType:'SWAP', instId:'BTC-USDT-SWAP' }] }));
-      clearInterval(liqPingId);
-      liqPingId = setInterval(function() {
-        if (liqWs && liqWs.readyState === 1) liqWs.send('ping');
-      }, 25000);
-    };
-
-    liqWs.onmessage = function(e) {
-      if (e.data === 'pong') return;
-      try {
-        var d = JSON.parse(e.data);
-        if (!d.data || !Array.isArray(d.data)) return;
-        d.data.forEach(function(item) {
-          if (!Array.isArray(item.details)) return;
-          item.details.forEach(function(det) {
-            var price = parseFloat(det.bkPx);
-            var sz    = parseFloat(det.sz);       // lots
-            var usd   = price * sz;                // sz is in BTC on OKX liquidation feed
-            if (!price || !sz) return;
-            var ts = parseInt(det.ts || item.ts) || Date.now();
-            seenLiqTs.add(ts);
-            addLiqEvent({ time: ts, price: price, size: sz, usdValue: usd, isLong: det.posSide === 'long' });
-          });
-        });
-      } catch(_) {}
-    };
-
-    liqWs.onclose = function() {
-      clearTimeout(timeout);
-      clearInterval(liqPingId);
-      feedDot.className = 'feed-dot err';
-      // Reconnect after 5 s (restart from first URL)
-      setTimeout(function() { urlIdx = 0; connectLiqWS(); }, 5000);
-    };
-
-    liqWs.onerror = function() { try { liqWs.close(); } catch(_) {} };
-  }
-
-  tryNext();
-}
-
-// REST fallback — polls OKX every 15 s; works even when WS port is blocked
-async function pollLiqREST() {
-  try {
-    var ctrl = new AbortController();
-    var tid  = setTimeout(function(){ ctrl.abort(); }, 6000);
-    var res  = await fetch('https://www.okx.com/api/v5/public/liquidation-orders?instType=SWAP&instId=BTC-USDT-SWAP&state=filled&limit=50', { signal: ctrl.signal });
-    clearTimeout(tid);
-    var d = await res.json();
-    if (d.code !== '0' || !Array.isArray(d.data)) return;
-    var added = 0;
-    d.data.forEach(function(item) {
-      if (!Array.isArray(item.details)) return;
-      item.details.forEach(function(det) {
-        var ts    = parseInt(det.ts || item.ts);
-        if (!ts || seenLiqTs.has(ts)) return;  // skip already-seen events
-        seenLiqTs.add(ts);
-        var price = parseFloat(det.bkPx);
-        var sz    = parseFloat(det.sz);
-        var usd   = price * sz;
-        if (!price || !sz) return;
-        addLiqEvent({ time: ts, price: price, size: sz, usdValue: usd, isLong: det.posSide === 'long' });
-        added++;
-      });
-    });
-    if (added > 0) {
-      var feedHdr = document.querySelector('.feed-hdr span:first-child');
-      if (feedHdr && !feedHdr.textContent.includes('REST')) feedHdr.textContent = 'LIVE LIQUIDATIONS · OKX REST';
-    }
-  } catch(_) {}
-}
-setInterval(pollLiqREST, 15000);
 
 // ── Chart context menu ────────────────────────────────────────────────────
-var ctxMenu     = document.getElementById('chartCtxMenu');
+var ctxMenu      = document.getElementById('chartCtxMenu');
 var ctxMenuPrice = 0;
+var ctxMenuTime  = 0;
 
-function showChartContextMenu(x, y, price) {
+function showChartContextMenu(x, y, price, snapTime) {
   ctxMenuPrice = price;
-  document.getElementById('ctxLabel').textContent   = 'At $' + fmt(price);
+  ctxMenuTime  = snapTime || Math.floor(Date.now() / 1000);
+  document.getElementById('ctxLabel').textContent   = 'Wick @ $' + fmt(price);
   document.getElementById('ctxPrice').textContent   = '$' + fmt(price);
   document.getElementById('ctxPrice2').textContent  = '$' + fmt(price);
 
@@ -1817,23 +1562,13 @@ function showChartContextMenu(x, y, price) {
 function hideCtxMenu() { ctxMenu.style.display = 'none'; }
 
 document.getElementById('ctxSetBounce').addEventListener('click', function() {
-  // Find nearest candle time to anchor the marker
-  var nearestTime = Math.floor(Date.now() / 1000);
-  if (loadedCandles.length) {
-    var best = loadedCandles.reduce(function(a, b) {
-      return Math.abs(b.close - ctxMenuPrice) < Math.abs(a.close - ctxMenuPrice) ? b : a;
-    });
-    nearestTime = best.time;
-  }
-
-  // Add to manualHighs (dedupe by price proximity)
   var already = manualHighs.some(function(h) { return Math.abs(h.price - ctxMenuPrice) / ctxMenuPrice < 0.001; });
   if (!already) {
-    manualHighs.unshift({ price: ctxMenuPrice, time: nearestTime, dropPct: 0, wickRatio: 0, manual: true });
+    // ctxMenuTime is already the snapped candle's time from the right-click handler
+    manualHighs.unshift({ price: ctxMenuPrice, time: ctxMenuTime, dropPct: 0, wickRatio: 0, manual: true });
     if (manualHighs.length > 5) manualHighs.pop();
   }
-
-  highInput.value = ctxMenuPrice;
+  highInput.value = Math.round(ctxMenuPrice);
   rebuildSwingChips();
   redrawSwingHighLines();
   render();
@@ -1854,8 +1589,6 @@ document.addEventListener('keydown',     function(e) { if (e.key === 'Escape') h
 connectWS();
 fetchREST();
 setInterval(fetchREST, 10000);
-connectLiqWS();
-pollLiqREST();   // immediate first poll so feed isn't empty on load
 initChart();
 render();
 
