@@ -1064,8 +1064,17 @@ async function fetchREST() {
 }
 
 // ── SWING HIGH DETECTION ──────────────────────────────────────────────────
-var swingHighLines = [];
-var detectedHighs  = [];
+var swingHighLines   = [];
+var swingHighMarkers = [];
+var detectedHighs    = [];
+
+// Single source-of-truth for all chart markers (swing highs + liq events)
+function applyAllMarkers() {
+  if (!candleSeries) return;
+  var all = swingHighMarkers.concat(liqMarkers);
+  all.sort(function(a, b) { return a.time - b.time; });
+  try { candleSeries.setMarkers(all); } catch(_) {}
+}
 
 function detectSwingHighs(candles) {
   if (candles.length < 12) return [];
@@ -1154,24 +1163,9 @@ function showSwingHighs(candles) {
       highInput.value = Math.round(parseFloat(chip.dataset.price));
       container.querySelectorAll('.sh-chip').forEach(function(c){ c.classList.remove('active'); });
       chip.classList.add('active');
+      redrawSwingHighLines();
       render();
     });
-  });
-
-  // Draw purple dashed lines on chart for each detected high
-  var purple = 'rgba(155, 109, 255, 0.65)';
-  detectedHighs.forEach(function(h, idx) {
-    try {
-      var pl = candleSeries.createPriceLine({
-        price: h.price,
-        color: purple,
-        lineWidth: 1,
-        lineStyle: LightweightCharts.LineStyle.Dashed,
-        axisLabelVisible: true,
-        title: 'SH' + (idx + 1) + ' ↓' + h.dropPct.toFixed(1) + '%',
-      });
-      swingHighLines.push(pl);
-    } catch(_) {}
   });
 
   // Auto-select most significant high if user still has the placeholder default
@@ -1179,8 +1173,58 @@ function showSwingHighs(candles) {
   if (detectedHighs.length && (isNaN(val) || val === 71400)) {
     highInput.value = Math.round(detectedHighs[0].price);
     container.querySelectorAll('.sh-chip')[0].classList.add('active');
-    render();
   }
+
+  redrawSwingHighLines();
+}
+
+// Redraws swing high price lines + arrowDown markers; selected one is solid+bright, rest are dim+dashed
+function redrawSwingHighLines() {
+  swingHighLines.forEach(function(pl){ try { candleSeries.removePriceLine(pl); } catch(_){} });
+  swingHighLines   = [];
+  swingHighMarkers = [];
+
+  if (!candleSeries || !detectedHighs.length) return;
+
+  var selectedPrice = parseFloat(highInput.value);
+
+  detectedHighs.forEach(function(h, idx) {
+    var isSel  = Math.abs(selectedPrice - h.price) / h.price < 0.002;
+    var color  = isSel ? 'rgba(180,130,255,0.95)' : 'rgba(155,109,255,0.30)';
+    var width  = isSel ? 2 : 1;
+    var style  = isSel ? LightweightCharts.LineStyle.Solid : LightweightCharts.LineStyle.Dashed;
+    var title  = 'SH' + (idx + 1) + ' ↓' + h.dropPct.toFixed(1) + '%' + (isSel ? ' ◀' : '');
+
+    try {
+      swingHighLines.push(candleSeries.createPriceLine({
+        price: h.price, color: color, lineWidth: width,
+        lineStyle: style, axisLabelVisible: true, title: title,
+      }));
+    } catch(_) {}
+
+    // Arrow marker at the exact rejection candle
+    swingHighMarkers.push({
+      time:     h.time,
+      position: 'aboveBar',
+      color:    isSel ? 'rgba(180,130,255,1)' : 'rgba(155,109,255,0.45)',
+      shape:    'arrowDown',
+      text:     isSel ? '★ SH' + (idx + 1) : 'SH' + (idx + 1),
+      size:     isSel ? 2 : 1,
+    });
+  });
+
+  applyAllMarkers();
+}
+
+// Called from chart click handler — selects the swing high, updates chip + input
+function selectSwingHigh(h) {
+  highInput.value = Math.round(h.price);
+  var container = document.getElementById('suggestedHighs');
+  container.querySelectorAll('.sh-chip').forEach(function(c) {
+    c.classList.toggle('active', Math.abs(parseFloat(c.dataset.price) - h.price) / h.price < 0.002);
+  });
+  redrawSwingHighLines();
+  render();
 }
 
 // ── CHART ─────────────────────────────────────────────────────────────────
@@ -1220,6 +1264,19 @@ function initChart() {
     }
   });
   ro.observe(container);
+
+  // Click on/near a swing high line → select it
+  chart.subscribeClick(function(param) {
+    if (!param.point || !detectedHighs.length || !candleSeries) return;
+    var price = candleSeries.coordinateToPrice(param.point.y);
+    if (!price || isNaN(price)) return;
+    var nearest = null, minDist = Infinity;
+    detectedHighs.forEach(function(h) {
+      var d = Math.abs(h.price - price) / h.price;
+      if (d < 0.006 && d < minDist) { nearest = h; minDist = d; }
+    });
+    if (nearest) selectSwingHigh(nearest);
+  });
 
   loadCandles();
 }
@@ -1284,8 +1341,7 @@ async function loadCandles() {
       candleSeries.setData(candles);
       currentCandle = candles[candles.length - 1];
       liqMarkers = [];
-      candleSeries.setMarkers([]);
-      showSwingHighs(candles);
+      showSwingHighs(candles);  // resets swingHighMarkers + calls applyAllMarkers
       updateChartLines(lastZones);
       document.getElementById('chartLabel').textContent =
         'BTC/USDT · ' + currentIvLabel + ' · ' + src.name + ' — liq zones overlaid';
@@ -1389,7 +1445,7 @@ function addLiqChartMarker(ev) {
   // Must be sorted by time
   liqMarkers.sort(function(a,b){ return a.time - b.time; });
   if (liqMarkers.length > 120) liqMarkers = liqMarkers.slice(-120);
-  try { candleSeries.setMarkers(liqMarkers); } catch(_) {}
+  applyAllMarkers();
 }
 
 function renderFeed() {
@@ -1419,37 +1475,101 @@ function updateFeedStats() {
 }
 setInterval(updateFeedStats, 5000);
 
-// ── Bybit Liquidation WebSocket ───────────────────────────────────────────
-var liqWs = null;
+// ── Liquidation WebSocket — Bybit → OKX fallback ─────────────────────────
+var liqWs      = null;
+var liqWsIdx   = 0;
+var liqPingId  = null;
+
+var LIQ_SOURCES = [
+  {
+    name: 'Bybit',
+    url:  'wss://stream.bybit.com/v5/public/linear',
+    onopen: function(ws) {
+      ws.send(JSON.stringify({ op:'subscribe', args:['liquidation.BTCUSDT'] }));
+      // Bybit requires a ping every 20 s or it drops the connection
+      clearInterval(liqPingId);
+      liqPingId = setInterval(function() {
+        if (ws.readyState === 1) ws.send(JSON.stringify({ op:'ping' }));
+      }, 20000);
+    },
+    onmessage: function(d) {
+      if (d.topic === 'liquidation.BTCUSDT' && d.data) {
+        var ev = d.data;
+        var price = parseFloat(ev.price), size = parseFloat(ev.size);
+        return { time: d.ts || Date.now(), price: price, size: size,
+                 usdValue: price * size, isLong: ev.side === 'Sell' };
+      }
+      return null;
+    },
+  },
+  {
+    name: 'OKX',
+    url:  'wss://ws.okx.com:8443/ws/v5/public',
+    onopen: function(ws) {
+      ws.send(JSON.stringify({ op:'subscribe', args:[{ channel:'liquidation-orders', instType:'SWAP' }] }));
+      // OKX ping
+      clearInterval(liqPingId);
+      liqPingId = setInterval(function() {
+        if (ws.readyState === 1) ws.send('ping');
+      }, 25000);
+    },
+    onmessage: function(d) {
+      if (!d.data || !Array.isArray(d.data)) return null;
+      var events = [];
+      d.data.forEach(function(item) {
+        if (!item.instId || item.instId.indexOf('BTC') < 0) return;
+        if (!Array.isArray(item.details)) return;
+        item.details.forEach(function(det) {
+          var price = parseFloat(det.bkPx), size = parseFloat(det.sz);
+          if (!price || !size) return;
+          events.push({ time: parseInt(item.ts) || Date.now(), price: price, size: size,
+                        usdValue: price * size, isLong: det.posSide === 'long' });
+        });
+      });
+      return events.length ? events : null;
+    },
+  },
+];
 
 function connectLiqWS() {
+  clearInterval(liqPingId);
   try { if (liqWs) liqWs.close(); } catch(_) {}
-  liqWs = new WebSocket('wss://stream.bybit.com/v5/public/linear');
+
+  var src     = LIQ_SOURCES[liqWsIdx % LIQ_SOURCES.length];
   var feedDot = document.getElementById('feedDot');
+  var feedHdr = document.querySelector('.feed-hdr span:first-child');
+  if (feedHdr) feedHdr.textContent = 'LIVE LIQUIDATIONS · ' + src.name.toUpperCase();
+
+  liqWs = new WebSocket(src.url);
+
+  // Timeout: if no open in 8 s try next source
+  var timeout = setTimeout(function() {
+    if (liqWs.readyState !== 1) { liqWsIdx++; try { liqWs.close(); } catch(_) {} }
+  }, 8000);
 
   liqWs.onopen = function() {
+    clearTimeout(timeout);
     feedDot.className = 'feed-dot live';
-    liqWs.send(JSON.stringify({ op:'subscribe', args:['liquidation.BTCUSDT'] }));
+    src.onopen(liqWs);
   };
 
   liqWs.onmessage = function(e) {
+    if (e.data === 'pong' || e.data === '{"op":"pong"}') return;
     try {
       var d = JSON.parse(e.data);
-      if (d.topic === 'liquidation.BTCUSDT' && d.data) {
-        var ev = d.data;
-        var price    = parseFloat(ev.price);
-        var size     = parseFloat(ev.size);
-        var usdValue = price * size;
-        // side:"Sell" = long was liquidated (forced to sell); "Buy" = short liq
-        var isLong   = ev.side === 'Sell';
-        addLiqEvent({ time: d.ts || Date.now(), price, size, usdValue, isLong });
-      }
+      var result = src.onmessage(d);
+      if (!result) return;
+      var evts = Array.isArray(result) ? result : [result];
+      evts.forEach(function(ev) { addLiqEvent(ev); });
     } catch(_) {}
   };
 
   liqWs.onclose = function() {
+    clearTimeout(timeout);
+    clearInterval(liqPingId);
     feedDot.className = 'feed-dot';
-    setTimeout(connectLiqWS, 4000);
+    liqWsIdx++;
+    setTimeout(connectLiqWS, 3000);
   };
 
   liqWs.onerror = function() { try { liqWs.close(); } catch(_) {} };
