@@ -697,10 +697,14 @@ tierChips.forEach(function(c) {
   c.addEventListener('click', function(){ c.classList.toggle('active'); render(); });
 });
 sideLong.addEventListener('click', function(){
-  side = 'long'; sideLong.classList.add('active'); sideShort.classList.remove('active'); render();
+  side = 'long'; sideLong.classList.add('active'); sideShort.classList.remove('active');
+  if (loadedCandles.length) showSwingHighs(loadedCandles, true);
+  render();
 });
 sideShort.addEventListener('click', function(){
-  side = 'short'; sideShort.classList.add('active'); sideLong.classList.remove('active'); render();
+  side = 'short'; sideShort.classList.add('active'); sideLong.classList.remove('active');
+  if (loadedCandles.length) showSwingHighs(loadedCandles, true);
+  render();
 });
 [highInput, highInput2, maintInput, feeInput].forEach(function(el){
   el.addEventListener('input', render);
@@ -1067,6 +1071,7 @@ async function fetchREST() {
 var swingHighLines   = [];
 var swingHighMarkers = [];
 var detectedHighs    = [];
+var loadedCandles    = [];
 
 // Single source-of-truth for all chart markers (swing highs + liq events)
 function applyAllMarkers() {
@@ -1133,27 +1138,80 @@ function detectSwingHighs(candles) {
   return deduped;
 }
 
-function showSwingHighs(candles) {
-  // Clear old chart lines
+function detectSwingLows(candles) {
+  if (candles.length < 12) return [];
+  var LOOKBACK    = 4;
+  var MIN_RISE    = 1.0;
+  var DEDUP_PCT   = 0.008;
+  var MAX_CANDLES = Math.min(candles.length, 250);
+  var start = candles.length - MAX_CANDLES;
+  var found = [];
+
+  for (var i = start + LOOKBACK; i < candles.length - LOOKBACK; i++) {
+    var pivot = candles[i].low;
+    var isPivot = true;
+    for (var j = i - LOOKBACK; j <= i + LOOKBACK; j++) {
+      if (j !== i && candles[j].low <= pivot) { isPivot = false; break; }
+    }
+    if (!isPivot) continue;
+
+    // Measure highest high after this pivot (confirms the bounce)
+    var maxAfter = -Infinity;
+    for (var k = i + 1; k < candles.length; k++) {
+      if (candles[k].high > maxAfter) maxAfter = candles[k].high;
+    }
+    var risePct = (maxAfter - pivot) / pivot * 100;
+    if (risePct < MIN_RISE) continue;
+
+    // Lower wick ratio: how prominent is the lower shadow
+    var c = candles[i];
+    var range = c.high - c.low;
+    var wickRatio = range > 0 ? (Math.min(c.open, c.close) - c.low) / range : 0;
+
+    var recency = (i - start) / (candles.length - start);
+    var score   = risePct * (0.4 + 0.6 * recency) * (1 + wickRatio * 0.5);
+    found.push({ price: pivot, time: candles[i].time, dropPct: risePct, wickRatio: wickRatio, score: score });
+  }
+
+  found.sort(function(a, b) { return b.score - a.score; });
+  var deduped = [];
+  for (var fi = 0; fi < found.length; fi++) {
+    var h = found[fi];
+    var tooClose = false;
+    for (var di = 0; di < deduped.length; di++) {
+      if (Math.abs(deduped[di].price - h.price) / h.price < DEDUP_PCT) { tooClose = true; break; }
+    }
+    if (!tooClose) { deduped.push(h); if (deduped.length >= 5) break; }
+  }
+  return deduped;
+}
+
+function showSwingHighs(candles, forceSelect) {
   swingHighLines.forEach(function(pl){ try { candleSeries.removePriceLine(pl); } catch(_){} });
   swingHighLines = [];
 
-  detectedHighs = detectSwingHighs(candles);
+  var isShort = (side === 'short');
+  detectedHighs = isShort ? detectSwingLows(candles) : detectSwingHighs(candles);
 
   var container = document.getElementById('suggestedHighs');
+  var sectionLabel = isShort ? 'Detected bounces (dip rejections)' : 'Detected rejections';
   if (!detectedHighs.length) {
-    container.innerHTML = '<div class="sh-label">Detected rejections</div><div class="sh-chips"><span class="sh-loading">none found in this window</span></div>';
+    container.innerHTML = '<div class="sh-label">' + sectionLabel + '</div><div class="sh-chips"><span class="sh-loading">none found in this window</span></div>';
     return;
   }
 
-  var html = '<div class="sh-label">Detected rejections — click to use</div><div class="sh-chips">';
+  var html = '<div class="sh-label">' + sectionLabel + ' — click to use</div><div class="sh-chips">';
   var currentVal = parseFloat(highInput.value);
-  detectedHighs.forEach(function(h, idx) {
-    var wickTag = h.wickRatio > 0.45 ? '<span class="sh-wick">▲wick</span>' : '';
-    var isActive = Math.abs(currentVal - h.price) / h.price < 0.001;
+  detectedHighs.forEach(function(h) {
+    var isActive = Math.abs(currentVal - h.price) / h.price < 0.002;
+    var pct = isShort
+      ? '<span class="sh-drop" style="color:var(--bull)">↑' + h.dropPct.toFixed(1) + '%</span>'
+      : '<span class="sh-drop">↓' + h.dropPct.toFixed(1) + '%</span>';
+    var wickTag = h.wickRatio > 0.45
+      ? '<span class="sh-wick">' + (isShort ? '▼wick' : '▲wick') + '</span>'
+      : '';
     html += '<button class="sh-chip' + (isActive ? ' active' : '') + '" data-price="' + h.price.toFixed(2) + '">' +
-      '$' + fmt(h.price) + ' <span class="sh-drop">↓' + h.dropPct.toFixed(1) + '%</span>' + wickTag +
-      '</button>';
+      '$' + fmt(h.price) + ' ' + pct + wickTag + '</button>';
   });
   html += '</div>';
   container.innerHTML = html;
@@ -1168,9 +1226,9 @@ function showSwingHighs(candles) {
     });
   });
 
-  // Auto-select most significant high if user still has the placeholder default
+  // Auto-select top result on first load, side switch, or interval change
   var val = parseFloat(highInput.value);
-  if (detectedHighs.length && (isNaN(val) || val === 71400)) {
+  if (detectedHighs.length && (forceSelect || isNaN(val) || val === 71400)) {
     highInput.value = Math.round(detectedHighs[0].price);
     container.querySelectorAll('.sh-chip')[0].classList.add('active');
   }
@@ -1202,12 +1260,13 @@ function redrawSwingHighLines() {
       }));
     } catch(_) {}
 
-    // Arrow marker at the exact rejection candle
+    // Arrow marker at the exact rejection candle (direction mirrors side)
+    var isShortMode = (side === 'short');
     swingHighMarkers.push({
       time:     h.time,
-      position: 'aboveBar',
+      position: isShortMode ? 'belowBar' : 'aboveBar',
       color:    isSel ? 'rgba(180,130,255,1)' : 'rgba(155,109,255,0.45)',
-      shape:    'arrowDown',
+      shape:    isShortMode ? 'arrowUp' : 'arrowDown',
       text:     isSel ? '★ SH' + (idx + 1) : 'SH' + (idx + 1),
       size:     isSel ? 2 : 1,
     });
@@ -1341,7 +1400,8 @@ async function loadCandles() {
       candleSeries.setData(candles);
       currentCandle = candles[candles.length - 1];
       liqMarkers = [];
-      showSwingHighs(candles);  // resets swingHighMarkers + calls applyAllMarkers
+      loadedCandles = candles;
+      showSwingHighs(candles, true);  // resets swingHighMarkers + calls applyAllMarkers
       updateChartLines(lastZones);
       document.getElementById('chartLabel').textContent =
         'BTC/USDT · ' + currentIvLabel + ' · ' + src.name + ' — liq zones overlaid';
